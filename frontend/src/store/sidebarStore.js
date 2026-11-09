@@ -1,0 +1,26 @@
+import { create } from 'zustand';
+
+const CHAVE = 'pc-sidebar';
+
+function inicial() {
+  try {
+    return localStorage.getItem(CHAVE) !== 'fechada'; // padrão: aberta
+  } catch {
+    return true;
+  }
+}
+
+// Sidebar do desktop (admin/caixa): aberta (com textos) ou fechada (só ícones).
+// A escolha fica salva no navegador.
+export const useSidebarStore = create((set, get) => ({
+  aberta: inicial(),
+  alternar: () => {
+    const aberta = !get().aberta;
+    try {
+      localStorage.setItem(CHAVE, aberta ? 'aberta' : 'fechada');
+    } catch {
+      // sem persistência: vale só nesta sessão
+    }
+    set({ aberta });
+  },
+}));

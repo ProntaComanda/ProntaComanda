@@ -1,0 +1,19 @@
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+
+// RNF08 - módulo de salão (mobile) e admin/KDS (telas largas) rodam do
+// mesmo build; a responsividade é resolvida em CSS (Tailwind), não em
+// builds separados.
+export default defineConfig({
+  plugins: [react()],
+  server: {
+    port: 5173,
+    proxy: {
+      '/api': 'http://localhost:3333',
+      '/uploads': 'http://localhost:3333', // fotos de produto (upload direto no backend)
+      // tempo real (KDS, mapa de mesas, ruptura de estoque): sem isto o
+      // socket.io tenta conectar na porta do Vite e fica "Reconectando..."
+      '/socket.io': { target: 'http://localhost:3333', ws: true },
+    },
+  },
+});

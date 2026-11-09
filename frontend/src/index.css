@@ -1,0 +1,81 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * Tokens de tema extraídos do protótipo do Figma (claro e escuro).
+ * Formato "R G B" para o Tailwind aplicar opacidade (ver tailwind.config.js).
+ * O tema escuro é ativado pela classe "dark" no <html> (ver store/themeStore.js).
+ */
+@layer base {
+  :root {
+    --canvas: 245 245 245;
+    --canvas-warm: 255 252 250;
+    --surface: 255 255 255;
+    --muted: 241 241 241;
+    --tile: 229 229 229;
+    --line: 229 229 229;
+    --ink: 16 16 16;
+    --ink-soft: 108 108 108;
+    --ink-faint: 160 160 160;
+    --strong: 0 0 0;
+    --strong-ink: 255 255 255;
+
+    --ok-soft: 194 244 195;
+    --ok-ink: 10 110 15;
+    --danger-soft: 246 207 207;
+    --danger-ink: 160 0 0;
+    --warn-soft: 255 233 214;
+    --warn-ink: 154 70 0;
+    --info-soft: 214 232 255;
+    --info-ink: 20 80 170;
+
+    color-scheme: light;
+  }
+
+  .dark {
+    --canvas: 17 17 17;
+    --canvas-warm: 22 22 22;
+    --surface: 26 26 26;
+    --muted: 36 36 36;
+    --tile: 45 45 45;
+    --line: 51 51 51;
+    --ink: 237 237 237;
+    --ink-soft: 163 163 163;
+    --ink-faint: 115 115 115;
+    --strong: 223 223 223;
+    --strong-ink: 17 17 17;
+
+    --ok-soft: 21 71 23;
+    --ok-ink: 124 232 130;
+    --danger-soft: 88 26 26;
+    --danger-ink: 255 150 150;
+    --warn-soft: 74 38 8;
+    --warn-ink: 255 176 110;
+    --info-soft: 12 40 80;
+    --info-ink: 140 190 255;
+
+    color-scheme: dark;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-canvas font-sans text-ink antialiased;
+  }
+
+  :focus-visible {
+    outline: 2px solid #f36115;
+    outline-offset: 2px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-fade-in,
+  .animate-pop-in,
+  .animate-toast-in {
+    animation: none;
+  }
+}

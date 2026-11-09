@@ -1,0 +1,20 @@
+name: Pipeline de CI do PI
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  build-docker:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Baixar código fonte
+        uses: actions/checkout@v4
+
+      # O compose exige o JWT_SECRET (ver docker-compose.yml); no CI basta um
+      # valor qualquer, a imagem não guarda nada disso.
+      - name: Compilar as imagens (backend e frontend)
+        env:
+          JWT_SECRET: segredo-so-para-o-ci
+        run: docker compose build

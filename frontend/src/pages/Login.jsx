@@ -1,0 +1,91 @@
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { useNavigate } from 'react-router-dom';
+import { loginSchema } from '../schemas/auth.schema';
+import { useAuthStore } from '../store/authStore';
+import { destinoPosLogin } from '../routes/destinosPorPerfil';
+
+// Aplica a máscara 000.000.000-00 enquanto digita. O schema de validação
+// continua recebendo o texto como o usuário vê (com máscara); quem tira a
+// pontuação antes de mandar pra API é o schema, não esta função.
+function formatarCpf(valor) {
+  return valor
+    .replace(/\D/g, '')
+    .slice(0, 11)
+    .replace(/(\d{3})(\d)/, '$1.$2')
+    .replace(/(\d{3})(\d)/, '$1.$2')
+    .replace(/(\d{3})(\d{1,2})$/, '$1-$2');
+}
+
+// RF02 - Tela de login (ver frame "Login" do design, tema vinho/laranja)
+export default function Login() {
+  const login = useAuthStore((s) => s.login);
+  const navigate = useNavigate();
+
+  const {
+    register,
+    handleSubmit,
+    formState: { errors, isSubmitting },
+    setError,
+  } = useForm({ resolver: zodResolver(loginSchema) });
+
+  const { onChange: onChangeCpf, ...registroCpf } = register('cpf');
+
+  const onSubmit = async ({ cpf, senha }) => {
+    try {
+      const funcionario = await login(cpf, senha);
+      // RF01 - cada perfil cai direto na sua tela: administrador/caixa no
+      // desktop, cozinha/bar no KDS standalone, garçom no módulo mobile.
+      navigate(destinoPosLogin(funcionario.perfil));
+    } catch {
+      setError('root', { message: 'CPF ou senha inválidos.' });
+    }
+  };
+
+  return (
+    <div className="grid min-h-screen grid-cols-1 md:grid-cols-2">
+      <div className="hidden bg-gradient-to-br from-primary-dark to-primary md:block" />
+
+      <div className="flex items-center justify-center p-8">
+        <form onSubmit={handleSubmit(onSubmit)} className="w-full max-w-sm space-y-4">
+          <h1 className="text-xl font-semibold">Bem-vindo</h1>
+
+          <div>
+            <input
+              {...registroCpf}
+              onChange={(e) => {
+                e.target.value = formatarCpf(e.target.value);
+                onChangeCpf(e);
+              }}
+              inputMode="numeric"
+              maxLength={14}
+              placeholder="000.000.000-00"
+              className="w-full rounded-md border px-3 py-2"
+            />
+            {errors.cpf && <p className="text-sm text-red-600">{errors.cpf.message}</p>}
+          </div>
+
+          <div>
+            <input
+              type="password"
+              {...register('senha')}
+              placeholder="Senha"
+              className="w-full rounded-md border px-3 py-2"
+            />
+            {errors.senha && <p className="text-sm text-red-600">{errors.senha.message}</p>}
+          </div>
+
+          {errors.root && <p className="text-sm text-red-600">{errors.root.message}</p>}
+
+          <button
+            type="submit"
+            disabled={isSubmitting}
+            className="w-full rounded-md bg-primary py-2 text-white disabled:opacity-50"
+          >
+            Entrar
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
