@@ -86,3 +86,28 @@ export const Textarea = forwardRef(function Textarea(
     </Campo>
   );
 });
+
+// Lista suspensa nativa (acessível por padrão). Mesmo contrato do Input.
+export const Select = forwardRef(function Select(
+  { label, error, hint, className, id, children, ...rest },
+  ref
+) {
+  const autoId = useId();
+  const selectId = id ?? autoId;
+  return (
+    <Campo id={selectId} label={label} error={error} hint={hint} className={className}>
+      {(descId) => (
+        <select
+          ref={ref}
+          id={selectId}
+          aria-invalid={error ? true : undefined}
+          aria-describedby={descId}
+          className={cn(CAMPO, 'h-10', bordas(error))}
+          {...rest}
+        >
+          {children}
+        </select>
+      )}
+    </Campo>
+  );
+});

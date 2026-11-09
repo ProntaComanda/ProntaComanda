@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import api from '../../api/axiosClient';
 import { agruparItens } from '../../utils/agruparItens';
+import { dinheiro } from '../../utils/dinheiro';
+import { Badge, Button, ConfirmDialog, IconCart, Input, Modal, Stepper } from '../ui';
+import { cn } from '../../lib/cn';
 
 const CHAVE_PEDIDOS = 'pc_pedidos'; // ids dos pedidos deste celular (localStorage)
 const CHAVE_MESA = 'pc_mesa'; // última mesa escolhida (sessionStorage)
@@ -38,17 +41,16 @@ function carregarAcompanhados() {
   }
 }
 
-const dinheiro = (v) => `R$ ${Number(v).toFixed(2).replace('.', ',')}`;
 const SITUACOES_EM_ANDAMENTO = ['na_fila', 'preparando', 'pronto'];
 
 const ROTULO_SITUACAO = {
-  aguardando: { texto: 'Aguardando garçom', classe: 'bg-orange-100 text-orange-700' },
-  na_fila: { texto: 'Na fila', classe: 'bg-neutral-100 text-neutral-600' },
-  preparando: { texto: 'Preparando', classe: 'bg-blue-100 text-blue-700' },
-  pronto: { texto: 'Pronto', classe: 'bg-green-100 text-green-700' },
-  entregue: { texto: 'Entregue', classe: 'bg-green-600 text-white' },
-  cancelado: { texto: 'Cancelado', classe: 'bg-red-100 text-red-700' },
-  recusado: { texto: 'Recusado', classe: 'bg-red-100 text-red-700' },
+  aguardando: { texto: 'Aguardando garçom', classe: 'bg-warn-soft text-warn-ink' },
+  na_fila: { texto: 'Na fila', classe: 'bg-muted text-ink-soft' },
+  preparando: { texto: 'Preparando', classe: 'bg-info-soft text-info-ink' },
+  pronto: { texto: 'Pronto', classe: 'bg-ok-soft text-ok-ink' },
+  entregue: { texto: 'Entregue', classe: 'bg-ok text-white' },
+  cancelado: { texto: 'Cancelado', classe: 'bg-danger-soft text-danger-ink' },
+  recusado: { texto: 'Recusado', classe: 'bg-danger-soft text-danger-ink' },
 };
 
 /**
@@ -68,8 +70,10 @@ export default function PainelPedido({
   onAlterarQuantidade,
   onObservacao,
   onPedidoEnviado,
+  onLimparCarrinho,
 }) {
   const [aberto, setAberto] = useState(false);
+  const [confirmandoCancelar, setConfirmandoCancelar] = useState(false);
   const [acompanhados, setAcompanhados] = useState(carregarAcompanhados); // [{ id, criadoEm }]
   const [dados, setDados] = useState({}); // id do pedido -> visão devolvida pelo servidor
   const [contas, setContas] = useState([]); // comandas das mesas em que o cliente tem pedido aceito
@@ -213,31 +217,40 @@ export default function PainelPedido({
   const temBarra = qtdTotal > 0 || acompanhados.length > 0;
   const mostrarAvisoConta = contaEncerrada && qtdTotal === 0 && !aberto; // aberto: o aviso aparece dentro do painel
 
+  const cancelarPedido = () => {
+    onLimparCarrinho();
+    setConfirmandoCancelar(false);
+    setErro('');
+    setAberto(false);
+  };
+
   return (
     <>
       {(temBarra || mostrarAvisoConta) && (
-        <div className="fixed inset-x-0 bottom-0 z-20 border-t bg-white p-3 shadow-[0_-2px_8px_rgba(0,0,0,0.08)]">
+        <div className="fixed inset-x-0 bottom-0 z-20 border-t border-line bg-surface p-3 shadow-[0_-2px_8px_rgba(0,0,0,0.08)]">
           {mostrarAvisoConta && (
-            <div className="mx-auto mb-2 flex w-full max-w-5xl items-center justify-between gap-3 rounded-md bg-green-50 px-4 py-2 text-sm text-green-800">
+            <div className="mx-auto mb-2 flex w-full max-w-6xl items-center justify-between gap-3 rounded-md bg-ok-soft px-4 py-2 text-sm text-ok-ink">
               <span>Conta encerrada. Obrigado pela visita!</span>
-              <button onClick={() => setContaEncerrada(false)} className="font-medium underline">
+              <button type="button" onClick={() => setContaEncerrada(false)} className="font-semibold underline">
                 Ok
               </button>
             </div>
           )}
           {temBarra && (
             <button
+              type="button"
               onClick={abrirPainel}
-              className="mx-auto flex w-full max-w-5xl items-center justify-between rounded-md bg-primary px-4 py-3 text-left text-white"
+              className="mx-auto flex w-full max-w-6xl items-center justify-between gap-3 rounded-md bg-brand-gradient px-4 py-3 text-left text-white shadow-md transition hover:brightness-110"
             >
-              <span className="font-medium">
+              <span className="flex items-center gap-2 font-semibold">
+                <IconCart className="h-5 w-5" />
                 {qtdTotal > 0
                   ? `Ver pedido (${qtdTotal} ${qtdTotal === 1 ? 'item' : 'itens'})`
                   : conta
                     ? `Comanda da mesa ${String(conta.mesaNumero).padStart(2, '0')}`
                     : 'Meus pedidos'}
               </span>
-              <span className="text-sm">
+              <span className="text-sm font-semibold">
                 {qtdTotal > 0
                   ? dinheiro(valorCarrinho)
                   : haPendente
@@ -251,148 +264,168 @@ export default function PainelPedido({
         </div>
       )}
 
-      {aberto && (
-        <div
-          className="fixed inset-0 z-30 flex items-end bg-black/40"
-          onClick={() => setAberto(false)}
-        >
-          <div
-            className="mx-auto max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-t-2xl bg-white p-4"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="mb-3 flex items-center justify-between">
-              <h2 className="text-lg font-semibold">
-                {itens.length > 0 ? 'Seu pedido' : 'Acompanhar pedido'}
-              </h2>
-              <button onClick={() => setAberto(false)} className="text-sm text-neutral-500">
-                Fechar
+      <Modal
+        open={aberto}
+        onClose={confirmandoCancelar ? undefined : () => setAberto(false)}
+        title={itens.length > 0 ? 'Seu carrinho' : 'Acompanhar pedido'}
+        description={itens.length > 0 ? 'Confira os itens antes de finalizar.' : undefined}
+        size="lg"
+        footer={
+          itens.length > 0 ? (
+            <div className="flex w-full flex-col gap-2">
+              <Button size="lg" fullWidth onClick={enviar} loading={enviando}>
+                {enviando ? 'Enviando...' : `Finalizar pedido · ${dinheiro(valorCarrinho)}`}
+              </Button>
+              <Button
+                variant="strong"
+                size="lg"
+                fullWidth
+                disabled={enviando}
+                onClick={() => setConfirmandoCancelar(true)}
+              >
+                Cancelar pedido
+              </Button>
+            </div>
+          ) : undefined
+        }
+      >
+        {itens.length > 0 && (
+          <>
+            <ul className="mb-5 divide-y divide-line">
+              {itens.map((i) => (
+                <li key={i.produto._id} className="flex gap-3 py-3 first:pt-0">
+                  <div className="h-14 w-14 shrink-0 overflow-hidden rounded-md bg-muted">
+                    {i.produto.imagemUrl && (
+                      <img src={i.produto.imagemUrl} alt="" className="h-full w-full object-cover" />
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate font-semibold">{i.produto.nome}</p>
+                        <p className="text-sm text-ink-soft">{dinheiro(i.produto.preco * i.quantidade)}</p>
+                      </div>
+                      <Stepper
+                        lixeira
+                        valor={i.quantidade}
+                        nome={i.produto.nome}
+                        onDecrement={() => onAlterarQuantidade(i.produto, -1)}
+                        onIncrement={() => onAlterarQuantidade(i.produto, 1)}
+                      />
+                    </div>
+                    <input
+                      value={i.observacao}
+                      onChange={(e) => onObservacao(i.produto._id, e.target.value)}
+                      maxLength={140}
+                      aria-label={`Observação para ${i.produto.nome}`}
+                      placeholder="Observação (ex.: sem cebola)"
+                      className="mt-2 h-8 w-full rounded-md border border-line bg-muted px-3 text-xs text-ink placeholder:text-ink-faint focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/40"
+                    />
+                  </div>
+                </li>
+              ))}
+            </ul>
+
+            <p className="mb-2 text-sm font-semibold">Qual é a sua mesa?</p>
+            <div className="mb-1 grid grid-cols-4 gap-2 sm:grid-cols-6">
+              {mesas.map((m) => (
+                <button
+                  key={m._id}
+                  type="button"
+                  disabled={!m.aceitaPedido}
+                  onClick={() => escolherMesa(m._id)}
+                  aria-pressed={mesaId === m._id}
+                  className={cn(
+                    'h-10 rounded-md border text-sm font-semibold transition',
+                    mesaId === m._id
+                      ? 'border-primary bg-primary text-white'
+                      : 'border-line bg-muted text-ink hover:bg-tile',
+                    !m.aceitaPedido && 'cursor-not-allowed opacity-40'
+                  )}
+                >
+                  {String(m.numero).padStart(2, '0')}
+                </button>
+              ))}
+            </div>
+            {!mesas.length && !erro && <p className="text-sm text-ink-soft">Carregando mesas...</p>}
+            <p className="mb-4 text-xs text-ink-faint">
+              Confira o número da sua mesa. O garçom confirma o pedido antes de ele ir para a cozinha.
+            </p>
+
+            <Input
+              value={nomeCliente}
+              onChange={(e) => setNomeCliente(e.target.value)}
+              maxLength={40}
+              label="Seu nome (opcional)"
+              placeholder="Como o garçom pode te chamar?"
+            />
+
+            <div className="mt-4 flex items-center justify-between rounded-lg bg-muted p-3">
+              <span className="text-sm font-semibold">Total</span>
+              <span className="text-lg font-semibold">{dinheiro(valorCarrinho)}</span>
+            </div>
+            <p className="mt-2 text-xs text-ink-faint">
+              Os valores não incluem taxa de serviço; a conta final é fechada no caixa.
+            </p>
+
+            {erro && (
+              <p role="alert" className="mt-3 text-sm text-danger-ink">
+                {erro}
+              </p>
+            )}
+          </>
+        )}
+
+        {pedidosEmAberto.length > 0 && (
+          <section className={itens.length > 0 ? 'mt-6 border-t border-line pt-4' : 'mb-4'}>
+            {itens.length > 0 && <h3 className="mb-3 font-display text-base">Pedidos enviados</h3>}
+            <div className="space-y-3">
+              {pedidosEmAberto.map((p) => (
+                <CartaoPedido key={p._id} pedido={p} onRemover={() => removerDaLista(p._id)} />
+              ))}
+            </div>
+          </section>
+        )}
+
+        {contas.map((c) => (
+          <ComandaDaMesa key={c.mesaId} conta={c} separar={itens.length > 0 || pedidosEmAberto.length > 0} />
+        ))}
+
+        {!itens.length &&
+          !pedidosEmAberto.length &&
+          !contas.length &&
+          (contaEncerrada ? (
+            <div className="my-4 rounded-lg bg-ok-soft p-4 text-center text-ok-ink">
+              <p className="font-semibold">Conta encerrada. Obrigado pela visita!</p>
+              <button
+                type="button"
+                onClick={() => {
+                  setContaEncerrada(false);
+                  setAberto(false);
+                }}
+                className="mt-2 text-sm underline"
+              >
+                Ok
               </button>
             </div>
+          ) : (
+            <p className="py-6 text-center text-sm text-ink-soft">
+              {acompanhados.length
+                ? 'Carregando seus pedidos...'
+                : 'Seu carrinho está vazio. Toque em “Adicionar” nos itens do cardápio.'}
+            </p>
+          ))}
+      </Modal>
 
-            {itens.length > 0 && (
-              <>
-                <ul className="mb-4 divide-y">
-                  {itens.map((i) => (
-                    <li key={i.produto._id} className="py-3">
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="min-w-0">
-                          <p className="truncate font-medium">{i.produto.nome}</p>
-                          <p className="text-sm text-neutral-500">
-                            {dinheiro(i.produto.preco * i.quantidade)}
-                          </p>
-                        </div>
-                        <div className="flex shrink-0 items-center gap-3">
-                          <button
-                            onClick={() => onAlterarQuantidade(i.produto, -1)}
-                            aria-label={`Diminuir ${i.produto.nome}`}
-                            className="h-8 w-8 rounded-full border text-lg leading-none"
-                          >
-                            −
-                          </button>
-                          <span className="w-5 text-center">{i.quantidade}</span>
-                          <button
-                            onClick={() => onAlterarQuantidade(i.produto, 1)}
-                            aria-label={`Aumentar ${i.produto.nome}`}
-                            className="h-8 w-8 rounded-full bg-primary text-lg leading-none text-white"
-                          >
-                            +
-                          </button>
-                        </div>
-                      </div>
-                      <input
-                        value={i.observacao}
-                        onChange={(e) => onObservacao(i.produto._id, e.target.value)}
-                        maxLength={140}
-                        placeholder="Observação (ex.: sem cebola)"
-                        className="mt-2 w-full rounded-md border px-3 py-1.5 text-sm"
-                      />
-                    </li>
-                  ))}
-                </ul>
-
-                <p className="mb-2 text-sm font-medium">Qual é a sua mesa?</p>
-                <div className="mb-1 grid grid-cols-4 gap-2">
-                  {mesas.map((m) => (
-                    <button
-                      key={m._id}
-                      disabled={!m.aceitaPedido}
-                      onClick={() => escolherMesa(m._id)}
-                      className={`rounded-md border py-2 text-sm ${
-                        mesaId === m._id ? 'border-primary bg-primary text-white' : ''
-                      } ${!m.aceitaPedido ? 'cursor-not-allowed opacity-40' : ''}`}
-                    >
-                      {String(m.numero).padStart(2, '0')}
-                    </button>
-                  ))}
-                </div>
-                {!mesas.length && !erro && (
-                  <p className="text-sm text-neutral-500">Carregando mesas...</p>
-                )}
-                <p className="mb-3 text-xs text-neutral-500">
-                  Confira o número da sua mesa. O garçom confirma o pedido antes de ele ir para a
-                  cozinha.
-                </p>
-
-                <input
-                  value={nomeCliente}
-                  onChange={(e) => setNomeCliente(e.target.value)}
-                  maxLength={40}
-                  placeholder="Seu nome (opcional)"
-                  className="mb-3 w-full rounded-md border px-3 py-2 text-sm"
-                />
-
-                {erro && <p className="mb-3 text-sm text-red-600">{erro}</p>}
-
-                <button
-                  onClick={enviar}
-                  disabled={enviando}
-                  className="mb-2 w-full rounded-md bg-primary py-3 font-medium text-white disabled:opacity-60"
-                >
-                  {enviando ? 'Enviando...' : `Enviar pedido · ${dinheiro(valorCarrinho)}`}
-                </button>
-              </>
-            )}
-
-            {pedidosEmAberto.length > 0 && (
-              <section className={itens.length > 0 ? 'mt-6 border-t pt-4' : 'mb-4'}>
-                {itens.length > 0 && <h3 className="mb-3 font-semibold">Pedidos enviados</h3>}
-                <div className="space-y-3">
-                  {pedidosEmAberto.map((p) => (
-                    <CartaoPedido key={p._id} pedido={p} onRemover={() => removerDaLista(p._id)} />
-                  ))}
-                </div>
-              </section>
-            )}
-
-            {contas.map((c) => (
-              <ComandaDaMesa key={c.mesaId} conta={c} separar={itens.length > 0 || pedidosEmAberto.length > 0} />
-            ))}
-
-            {!itens.length && !pedidosEmAberto.length && !contas.length && (
-              contaEncerrada ? (
-                <div className="my-4 rounded-lg bg-green-50 p-4 text-center text-green-800">
-                  <p className="font-medium">Conta encerrada. Obrigado pela visita!</p>
-                  <button
-                    onClick={() => {
-                      setContaEncerrada(false);
-                      setAberto(false);
-                    }}
-                    className="mt-2 text-sm underline"
-                  >
-                    Ok
-                  </button>
-                </div>
-              ) : (
-                <p className="py-6 text-center text-sm text-neutral-500">
-                  {acompanhados.length
-                    ? 'Carregando seus pedidos...'
-                    : 'Seu pedido está vazio. Toque em “Adicionar ao pedido” nos itens do cardápio.'}
-                </p>
-              )
-            )}
-          </div>
-        </div>
-      )}
+      <ConfirmDialog
+        open={confirmandoCancelar}
+        title="Cancelar este pedido?"
+        message="Todos os itens do carrinho serão removidos."
+        confirmLabel="Cancelar pedido"
+        cancelLabel="Voltar ao carrinho"
+        onConfirm={cancelarPedido}
+        onCancel={() => setConfirmandoCancelar(false)}
+      />
     </>
   );
 }
@@ -404,18 +437,16 @@ function ComandaDaMesa({ conta, separar }) {
   const varias = conta.comandas.length > 1;
 
   return (
-    <section className={separar ? 'mt-6 border-t pt-4' : ''}>
-      <h3 className="mb-3 font-semibold">
+    <section className={separar ? 'mt-6 border-t border-line pt-4' : ''}>
+      <h3 className="mb-3 font-display text-base">
         Comanda da mesa {String(conta.mesaNumero).padStart(2, '0')}
       </h3>
 
       <div className="space-y-4">
         {conta.comandas.map((comanda) => (
           <div key={comanda.numero}>
-            {varias && (
-              <p className="mb-1 text-xs font-medium text-neutral-500">Comanda #{comanda.numero}</p>
-            )}
-            <ul className="space-y-2 text-sm">
+            {varias && <p className="mb-1 text-xs font-semibold text-ink-soft">Comanda #{comanda.numero}</p>}
+            <ul className="space-y-3 text-sm">
               {agruparItens(comanda.itens, (i) => i.situacao).map((grupo) => {
                 const cancelado = grupo.situacao === 'cancelado';
                 const rotulo = ROTULO_SITUACAO[grupo.situacao] ?? ROTULO_SITUACAO.na_fila;
@@ -430,20 +461,21 @@ function ComandaDaMesa({ conta, separar }) {
                 return (
                   <li key={grupo.chave} className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
-                      <p className={cancelado ? 'text-neutral-400 line-through' : ''}>
+                      <p className={cancelado ? 'text-ink-faint line-through' : ''}>
                         {grupo.quantidade}× {grupo.nomeProduto}
                       </p>
-                      {grupo.observacao && (
-                        <p className="text-xs text-neutral-500">{grupo.observacao}</p>
-                      )}
+                      {grupo.observacao && <p className="text-xs text-ink-soft">{grupo.observacao}</p>}
                       <span
-                        className={`mt-1 inline-block rounded-full px-2 py-0.5 text-xs ${rotulo.classe}`}
+                        className={cn(
+                          'mt-1 inline-block rounded-full px-2 py-0.5 text-[11px] font-semibold',
+                          rotulo.classe
+                        )}
                       >
                         {rotulo.texto}
                       </span>
-                      {origem && <span className="ml-2 text-xs text-neutral-400">{origem}</span>}
+                      {origem && <span className="ml-2 text-xs text-ink-faint">{origem}</span>}
                     </div>
-                    <span className={`shrink-0 ${cancelado ? 'text-neutral-400 line-through' : ''}`}>
+                    <span className={cn('shrink-0', cancelado && 'text-ink-faint line-through')}>
                       {dinheiro(grupo.quantidade * grupo.precoUnitario)}
                     </span>
                   </li>
@@ -454,16 +486,16 @@ function ComandaDaMesa({ conta, separar }) {
         ))}
       </div>
 
-      <div className="mt-4 rounded-lg bg-neutral-50 p-3">
+      <div className="mt-4 rounded-lg bg-muted p-3">
         <div className="flex items-center justify-between">
-          <span className="font-medium">Total da comanda</span>
+          <span className="font-semibold">Total da comanda</span>
           <span className="text-lg font-semibold">{dinheiro(conta.total)}</span>
         </div>
-        <div className="mt-1 flex items-center justify-between text-sm text-neutral-600">
+        <div className="mt-1 flex items-center justify-between text-sm text-ink-soft">
           <span>O que você pediu</span>
           <span>{dinheiro(conta.meuTotal)}</span>
         </div>
-        <p className="mt-2 text-xs text-neutral-500">
+        <p className="mt-2 text-xs text-ink-faint">
           É a mesma comanda para todos da mesa. Os valores não incluem taxa de serviço; a conta
           final é fechada no caixa.
         </p>
@@ -480,28 +512,23 @@ function CartaoPedido({ pedido, onRemover }) {
   });
   const mesa = pedido.mesaNumero ? `Mesa ${String(pedido.mesaNumero).padStart(2, '0')}` : 'Mesa';
   const pendente = pedido.status === 'pendente';
+  const riscado = pendente ? '' : 'text-ink-faint line-through';
 
   return (
-    <div className="rounded-lg border p-3">
+    <div className="rounded-lg border border-line p-3">
       <div className="mb-2 flex items-center justify-between gap-2">
-        <p className="text-sm font-medium">
-          {mesa} <span className="font-normal text-neutral-400">· {hora}</span>
+        <p className="text-sm font-semibold">
+          {mesa} <span className="font-normal text-ink-faint">· {hora}</span>
         </p>
-        <span
-          className={`rounded-full px-2 py-0.5 text-xs ${
-            pendente ? 'bg-orange-100 text-orange-700' : 'bg-red-100 text-red-700'
-          }`}
-        >
+        <Badge tone={pendente ? 'warning' : 'danger'} dot={false}>
           {pendente ? 'Aguardando garçom' : 'Não confirmado'}
-        </span>
+        </Badge>
       </div>
 
       {pendente ? (
-        <p className="mb-2 text-xs text-neutral-500">
-          O garçom vai conferir o pedido. Esta tela atualiza sozinha.
-        </p>
+        <p className="mb-2 text-xs text-ink-soft">O garçom vai conferir o pedido. Esta tela atualiza sozinha.</p>
       ) : (
-        <p className="mb-2 text-sm text-red-700">
+        <p className="mb-2 text-sm text-danger-ink">
           {pedido.motivoRecusa ? `Motivo: ${pedido.motivoRecusa}. ` : ''}
           Fale com um garçom para ajustar o pedido.
         </p>
@@ -510,25 +537,23 @@ function CartaoPedido({ pedido, onRemover }) {
       <ul className="space-y-1 text-sm">
         {pedido.itens.map((i, idx) => (
           <li key={idx} className="flex items-start justify-between gap-2">
-            <span className={pendente ? '' : 'text-neutral-400 line-through'}>
+            <span className={riscado}>
               {i.quantidade}× {i.nomeProduto}
-              {i.observacao && <span className="block text-xs text-neutral-500">{i.observacao}</span>}
+              {i.observacao && <span className="block text-xs text-ink-soft">{i.observacao}</span>}
             </span>
-            <span className={`shrink-0 ${pendente ? '' : 'text-neutral-400 line-through'}`}>
-              {dinheiro(i.quantidade * i.precoUnitario)}
-            </span>
+            <span className={cn('shrink-0', riscado)}>{dinheiro(i.quantidade * i.precoUnitario)}</span>
           </li>
         ))}
       </ul>
 
-      <div className="mt-3 flex items-center justify-between border-t pt-2">
+      <div className="mt-3 flex items-center justify-between border-t border-line pt-2">
         {pendente ? (
           <>
-            <span className="text-xs text-neutral-500">Valor previsto</span>
-            <span className="font-medium">{dinheiro(pedido.total)}</span>
+            <span className="text-xs text-ink-soft">Valor previsto</span>
+            <span className="font-semibold">{dinheiro(pedido.total)}</span>
           </>
         ) : (
-          <button onClick={onRemover} className="text-xs text-neutral-500 underline">
+          <button type="button" onClick={onRemover} className="text-xs text-ink-soft underline">
             Remover da lista
           </button>
         )}

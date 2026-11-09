@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { loginSchema } from '../schemas/auth.schema';
 import { useAuthStore } from '../store/authStore';
 import { destinoPosLogin } from '../routes/destinosPorPerfil';
+import { Button, IconCheck, IconUser, Input, Logo, ThemeToggle } from '../components/ui';
 
 // Aplica a máscara 000.000.000-00 enquanto digita. O schema de validação
 // continua recebendo o texto como o usuário vê (com máscara); quem tira a
@@ -16,6 +17,8 @@ function formatarCpf(valor) {
     .replace(/(\d{3})(\d)/, '$1.$2')
     .replace(/(\d{3})(\d{1,2})$/, '$1-$2');
 }
+
+const DESTAQUES = ['Gestão de mesas e comandas', 'KDS em tempo real', 'Dashboard e relatórios'];
 
 // RF02 - Tela de login (ver frame "Login" do design, tema vinho/laranja)
 export default function Login() {
@@ -44,46 +47,69 @@ export default function Login() {
 
   return (
     <div className="grid min-h-screen grid-cols-1 md:grid-cols-2">
-      <div className="hidden bg-gradient-to-br from-primary-dark to-primary md:block" />
+      {/* Painel de marca (só em telas médias para cima) */}
+      <div className="hidden items-center justify-center bg-login-gradient p-12 text-white md:flex">
+        <div>
+          <Logo className="h-20 text-white" realce="#3d1304" />
+          <p className="mt-6 font-display text-4xl leading-none">
+            Pronta
+            <span className="bg-brand-gradient bg-clip-text text-transparent">Comanda</span>
+          </p>
+          <p className="mt-2 text-sm text-white/70">Sistema de Gestão para Restaurantes</p>
+          <ul className="mt-8 space-y-2 text-sm text-white/85">
+            {DESTAQUES.map((texto) => (
+              <li key={texto} className="flex items-center gap-2">
+                <IconCheck className="h-4 w-4 text-brand-start" />
+                {texto}
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
 
-      <div className="flex items-center justify-center p-8">
-        <form onSubmit={handleSubmit(onSubmit)} className="w-full max-w-sm space-y-4">
-          <h1 className="text-xl font-semibold">Bem-vindo</h1>
+      <div className="relative flex items-center justify-center bg-canvas p-8">
+        <ThemeToggle className="absolute right-4 top-4" />
 
-          <div>
-            <input
-              {...registroCpf}
-              onChange={(e) => {
-                e.target.value = formatarCpf(e.target.value);
-                onChangeCpf(e);
-              }}
-              inputMode="numeric"
-              maxLength={14}
-              placeholder="000.000.000-00"
-              className="w-full rounded-md border px-3 py-2"
-            />
-            {errors.cpf && <p className="text-sm text-red-600">{errors.cpf.message}</p>}
+        <form onSubmit={handleSubmit(onSubmit)} noValidate className="w-full max-w-sm space-y-4">
+          <div className="mb-6">
+            <Logo className="mb-4 h-14 text-ink" />
+            <h1 className="font-display text-2xl leading-tight">Bem-vindo de volta</h1>
+            <p className="mt-1 text-sm text-ink-soft">Entre com suas credenciais para acessar o painel</p>
           </div>
 
-          <div>
-            <input
-              type="password"
-              {...register('senha')}
-              placeholder="Senha"
-              className="w-full rounded-md border px-3 py-2"
-            />
-            {errors.senha && <p className="text-sm text-red-600">{errors.senha.message}</p>}
-          </div>
+          <Input
+            {...registroCpf}
+            onChange={(e) => {
+              e.target.value = formatarCpf(e.target.value);
+              onChangeCpf(e);
+            }}
+            label="CPF"
+            leftIcon={<IconUser className="h-4 w-4" />}
+            inputMode="numeric"
+            autoComplete="username"
+            maxLength={14}
+            placeholder="000.000.000-00"
+            error={errors.cpf?.message}
+          />
 
-          {errors.root && <p className="text-sm text-red-600">{errors.root.message}</p>}
+          <Input
+            type="password"
+            {...register('senha')}
+            label="Senha"
+            autoComplete="current-password"
+            placeholder="Sua senha"
+            error={errors.senha?.message}
+          />
 
-          <button
-            type="submit"
-            disabled={isSubmitting}
-            className="w-full rounded-md bg-primary py-2 text-white disabled:opacity-50"
-          >
+          {errors.root && (
+            <p role="alert" className="text-sm text-danger-ink">
+              {errors.root.message}
+            </p>
+          )}
+
+          <Button type="submit" size="lg" fullWidth loading={isSubmitting}>
             Entrar
-          </button>
+          </Button>
         </form>
       </div>
     </div>

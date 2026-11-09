@@ -1,5 +1,5 @@
 export { Button } from './Button';
-export { Input, Textarea } from './Input';
+export { Input, Select, Textarea } from './Input';
 export { Badge } from './Badge';
 export { Chip } from './Chip';
 export { Modal } from './Modal';
@@ -10,3 +10,5 @@ export { Spinner } from './Spinner';
 export { ThemeToggle } from './ThemeToggle';
 export * from './Icons';
 export { Logo } from './Logo';
+export { Stepper } from './Stepper';
+export { Menu } from './Menu';
