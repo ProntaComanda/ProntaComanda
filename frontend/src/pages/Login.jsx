@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { loginSchema } from '../schemas/auth.schema';
 import { useAuthStore } from '../store/authStore';
 import { destinoPosLogin } from '../routes/destinosPorPerfil';
-import { Button, IconCheck, IconUser, Input, Logo, ThemeToggle } from '../components/ui';
+import { Button, IconCheck, IconUser, Input, Logo } from '../components/ui';
 
 // Aplica a máscara 000.000.000-00 enquanto digita. O schema de validação
 // continua recebendo o texto como o usuário vê (com máscara); quem tira a
@@ -46,7 +46,7 @@ export default function Login() {
   };
 
   return (
-    <div className="grid min-h-screen grid-cols-1 md:grid-cols-2">
+    <div className="grid min-h-screen grid-cols-1 md:grid-cols-[1fr_minmax(22rem,27%)]">
       {/* Painel de marca (só em telas médias para cima) */}
       <div className="hidden items-center justify-center bg-login-gradient p-12 text-white md:flex">
         <div>
@@ -67,9 +67,7 @@ export default function Login() {
         </div>
       </div>
 
-      <div className="relative flex items-center justify-center bg-canvas p-8">
-        <ThemeToggle className="absolute right-4 top-4" />
-
+      <div className="flex items-center justify-center bg-canvas p-8">
         <form onSubmit={handleSubmit(onSubmit)} noValidate className="w-full max-w-sm space-y-4">
           <div className="mb-6">
             <Logo className="mb-4 h-14 text-ink" />
