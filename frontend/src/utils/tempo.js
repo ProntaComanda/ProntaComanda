@@ -20,3 +20,12 @@ export function duracao(ms) {
   const minutos = Math.max(0, Math.floor(ms / 60000));
   return `${doisDigitos(Math.floor(minutos / 60))}h ${doisDigitos(minutos % 60)}m`;
 }
+
+// 201_000 ms -> "03:21"; passando de 1h -> "01:05:00" (tempo do pedido no KDS)
+export function decorrido(ms) {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  return h > 0 ? `${doisDigitos(h)}:${doisDigitos(m)}:${doisDigitos(s)}` : `${doisDigitos(m)}:${doisDigitos(s)}`;
+}

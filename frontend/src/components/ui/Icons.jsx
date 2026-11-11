@@ -192,3 +192,17 @@ export const IconChevronDown = (p) => (
     <path d="m6 9 6 6 6-6" />
   </svg>
 );
+
+export const IconFileText = (p) => (
+  <svg {...base} {...p}>
+    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+    <path d="M14 2v6h6M8 13h8M8 17h5" />
+  </svg>
+);
+
+export const IconBowl = (p) => (
+  <svg {...base} {...p}>
+    <path d="M3 11h18a9 9 0 0 1-18 0z" />
+    <path d="M8 21h8M16 3l-4 8" />
+  </svg>
+);

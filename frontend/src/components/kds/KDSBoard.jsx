@@ -1,155 +1,153 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import api from '../../api/axiosClient';
+import { useAgora } from '../../hooks/useAgora';
 import { useSocket } from '../../hooks/useSocket';
-import { agruparItens } from '../../utils/agruparItens';
+import { toast } from '../../store/toastStore';
+import { Button, EmptyState, IconBowl, Spinner } from '../ui';
+import { pedidoCombinaComBusca, situacaoPedido } from '../../utils/kds';
+import { mensagemErro } from '../../utils/erroApi';
+import CardPedido from './CardPedido';
+import KdsFiltros from './KdsFiltros';
+import KdsResumo from './KdsResumo';
 
-const FILTROS = [
-  { chave: 'todos', label: 'Todos' },
-  { chave: 'pendente', label: 'Novos' },
-  { chave: 'em_preparo', label: 'Em preparo' },
-  { chave: 'pronto', label: 'Prontos' },
-];
-
-const LABEL_STATUS = { pendente: 'NOVO', em_preparo: 'EM PREPARO', pronto: 'PRONTO' };
-const LABEL_BOTAO = {
-  pendente: 'Iniciar preparo',
-  em_preparo: 'Marcar como pronto',
-  pronto: 'Marcar como entregue',
-};
+const ATUALIZACAO_DE_SEGURANCA_MS = 60000;
 
 /**
  * RF05/RF06 - Fluxo Operacional KDS + SLA (semáforo)
  *
- * Recebe `setor` ('cozinha' | 'bar') de fora porque este mesmo quadro é
- * usado em dois lugares: dentro do admin (`pages/admin/Cozinha.jsx`, com
- * sidebar, setor fixo) e na tela standalone (`pages/kds/PainelKDS.jsx`,
- * sem sidebar, setor conforme o perfil logado).
+ * Recebe `setor` ('cozinha' | 'bar') de fora porque este mesmo quadro é usado em dois
+ * lugares: dentro do admin (`pages/admin/Cozinha.jsx`, com sidebar e abas de setor) e na
+ * tela standalone (`pages/kds/PainelKDS.jsx`, sem sidebar, setor conforme o perfil logado).
+ * O cabeçalho de cada tela fica com a própria página; aqui ficam resumo, filtros e pedidos.
  */
 export default function KDSBoard({ setor }) {
+  const [pedidos, setPedidos] = useState(null); // null = primeira carga
+  const [erro, setErro] = useState('');
   const [filtro, setFiltro] = useState('todos');
-  const [pedidos, setPedidos] = useState([]);
+  const [busca, setBusca] = useState('');
+  const [avancando, setAvancando] = useState(() => new Set()); // comandas com o botão em andamento
+
+  // Um relógio só para o quadro: alimenta o "Há 03:21" dos cards e também as contagens de
+  // atrasados, que mudam com o tempo mesmo sem nenhum evento novo.
+  const agora = useAgora(1000);
   const socketRef = useSocket([setor]);
 
-  const carregar = useCallback(() => {
-    api.get('/comandas/kds', { params: { setor } }).then((r) => setPedidos(r.data));
+  const carregar = useCallback(async () => {
+    try {
+      const { data } = await api.get('/comandas/kds', { params: { setor } });
+      setPedidos(data);
+      setErro('');
+    } catch (err) {
+      setErro(mensagemErro(err, 'Não foi possível atualizar os pedidos.'));
+    }
   }, [setor]);
 
   useEffect(() => {
     carregar();
+    // rede de segurança: se o socket cair sem avisar, a cozinha não fica olhando tela velha
+    const id = setInterval(carregar, ATUALIZACAO_DE_SEGURANCA_MS);
+    return () => clearInterval(id);
   }, [carregar]);
 
   useEffect(() => {
     const socket = socketRef.current;
-    if (!socket) return;
+    if (!socket) return undefined;
     socket.on('kds:novo-item', carregar);
     socket.on('kds:status-atualizado', carregar);
+    socket.on('connect', carregar); // voltou a conexão: busca o que pode ter sido perdido
     return () => {
       socket.off('kds:novo-item', carregar);
       socket.off('kds:status-atualizado', carregar);
+      socket.off('connect', carregar);
     };
   }, [socketRef, carregar]);
 
-  const avancarStatus = async (comandaId) => {
-    await api.patch(`/comandas/${comandaId}/avancar-status`, null, { params: { setor } });
-    carregar();
-  };
+  async function avancar(comandaId) {
+    setAvancando((atual) => new Set(atual).add(comandaId));
+    try {
+      await api.patch(`/comandas/${comandaId}/avancar-status`, null, { params: { setor } });
+    } catch (err) {
+      // 409 = outra pessoa já avançou esse pedido: a recarga abaixo mostra como ele está agora
+      toast.error('Não foi possível atualizar o pedido', mensagemErro(err, 'Tente de novo.'));
+    } finally {
+      await carregar();
+      setAvancando((atual) => {
+        const proximo = new Set(atual);
+        proximo.delete(comandaId);
+        return proximo;
+      });
+    }
+  }
 
-  const pedidosFiltrados =
-    filtro === 'todos' ? pedidos : pedidos.filter((p) => p.statusGeral === filtro);
-
-  const contagem = (chave) =>
-    chave === 'todos' ? pedidos.length : pedidos.filter((p) => p.statusGeral === chave).length;
-
-  return (
-    <div>
-      <div className="mb-4 flex gap-2">
-        {FILTROS.map((f) => (
-          <button
-            key={f.chave}
-            onClick={() => setFiltro(f.chave)}
-            className={`rounded-full px-3 py-1 text-sm ${
-              filtro === f.chave ? 'bg-primary text-white' : 'border'
-            }`}
-          >
-            {f.label} {contagem(f.chave)}
-          </button>
-        ))}
-      </div>
-
-      <div className="grid grid-cols-3 gap-4">
-        {pedidosFiltrados.map((pedido) => (
-          <CardPedido key={pedido.comandaId} pedido={pedido} onAvancar={avancarStatus} />
-        ))}
-        {!pedidosFiltrados.length && (
-          <p className="col-span-3 text-sm text-neutral-400">Nenhum pedido por aqui agora.</p>
-        )}
-      </div>
-    </div>
+  // FIFO: o pedido mais antigo primeiro, que é o que a cozinha precisa tirar da frente.
+  const todos = useMemo(
+    () =>
+      (pedidos ?? [])
+        .map((pedido) => ({ pedido, ...situacaoPedido(pedido, agora) }))
+        .sort((a, b) => new Date(a.pedido.lancadoEm) - new Date(b.pedido.lancadoEm)),
+    [pedidos, agora]
   );
-}
 
-function CardPedido({ pedido, onAvancar }) {
-  const [tempoDecorrido, setTempoDecorrido] = useState('');
+  const contagens = useMemo(() => {
+    const total = { todos: todos.length, novo: 0, preparo: 0, pronto: 0, atrasado: 0 };
+    todos.forEach((p) => {
+      total[p.chave] += 1;
+    });
+    return total;
+  }, [todos]);
 
-  useEffect(() => {
-    const calcular = () => {
-      const minutos = Math.floor((Date.now() - new Date(pedido.lancadoEm)) / 60000);
-      setTempoDecorrido(
-        `Há ${String(Math.floor(minutos / 60)).padStart(2, '0')}:${String(minutos % 60).padStart(2, '0')}`
-      );
-    };
-    calcular();
-    const id = setInterval(calcular, 30000);
-    return () => clearInterval(id);
-  }, [pedido.lancadoEm]);
-
-  const minutosDecorridos = (Date.now() - new Date(pedido.lancadoEm)) / 60000;
-  // RF06 - o limite vem do tempo de preparo cadastrado no produto (o maior
-  // entre os itens do pedido); sem isso configurado, cai no padrão fixo de
-  // antes (10/20min). Amarelo a partir de 70% do tempo esperado, vermelho
-  // ao estourar o tempo cheio.
-  const limiteVermelho = pedido.tempoPreparoMinutos ?? 20;
-  const limiteAmarelo = pedido.tempoPreparoMinutos ? pedido.tempoPreparoMinutos * 0.7 : 10;
-  const corBadge =
-    minutosDecorridos > limiteVermelho
-      ? 'text-red-600'
-      : minutosDecorridos > limiteAmarelo
-        ? 'text-yellow-600'
-        : 'text-orange-600';
+  const visiveis = todos.filter(
+    (p) => (filtro === 'todos' || p.chave === filtro) && pedidoCombinaComBusca(p.pedido, busca)
+  );
 
   return (
-    <div className="rounded-lg border p-3">
-      <div className="flex items-center justify-between">
-        <p className="font-semibold">#{pedido.numeroComanda}</p>
-        <span className={`text-xs font-medium ${corBadge}`}>{tempoDecorrido}</span>
-      </div>
-      <p className="text-xs text-neutral-500">
-        Mesa {String(pedido.mesa?.numero ?? '--').padStart(2, '0')}
-      </p>
+    <div className="space-y-4">
+      <KdsResumo contagens={contagens} />
+      <KdsFiltros filtro={filtro} onFiltro={setFiltro} contagens={contagens} busca={busca} onBusca={setBusca} />
 
-      <ul className="my-2 space-y-1 text-sm">
-        {/* a cozinha vê "2x Hamburguer" em vez de duas linhas iguais */}
-        {agruparItens(pedido.itens, (i) => i.statusKDS).map((item) => (
-          <li key={item.chave}>
-            {item.quantidade}x {item.nomeProduto}
-            {item.observacao && (
-              <span className="block text-xs text-neutral-500">• {item.observacao}</span>
-            )}
-          </li>
-        ))}
-      </ul>
-
-      <div className="flex items-center justify-between">
-        <span className={`text-xs font-semibold ${corBadge}`}>
-          {LABEL_STATUS[pedido.statusGeral]}
-        </span>
-        <button
-          onClick={() => onAvancar(pedido.comandaId)}
-          className="rounded-md bg-orange-500 px-3 py-1 text-sm text-white"
+      {erro && (
+        <div
+          role="alert"
+          className="flex items-center justify-between gap-3 rounded-md bg-danger-soft px-4 py-2 text-sm text-danger-ink"
         >
-          {LABEL_BOTAO[pedido.statusGeral]}
-        </button>
-      </div>
+          <span>{erro}</span>
+          <Button variant="secondary" size="sm" onClick={carregar}>
+            Tentar de novo
+          </Button>
+        </div>
+      )}
+
+      {pedidos === null ? (
+        !erro && (
+          <div className="flex justify-center py-16 text-ink-soft">
+            <Spinner className="h-6 w-6" label="Carregando pedidos" />
+          </div>
+        )
+      ) : visiveis.length === 0 ? (
+        <EmptyState
+          icon={<IconBowl className="h-10 w-10" />}
+          title={todos.length === 0 ? 'Nenhum pedido por aqui agora' : 'Nenhum pedido encontrado'}
+          description={
+            todos.length === 0
+              ? 'Os pedidos aparecem aqui assim que forem lançados.'
+              : 'Tente outro filtro ou outra busca.'
+          }
+        />
+      ) : (
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(19rem,1fr))] gap-4">
+          {visiveis.map(({ pedido, chave, emAlerta }) => (
+            <CardPedido
+              key={pedido.comandaId}
+              pedido={pedido}
+              situacao={chave}
+              emAlerta={emAlerta}
+              agora={agora}
+              ocupado={avancando.has(pedido.comandaId)}
+              onAvancar={avancar}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
