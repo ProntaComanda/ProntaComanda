@@ -1,499 +1,269 @@
-import { Fragment, useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import AdminLayout from '../../components/layout/AdminLayout';
+import PageHeader from '../../components/layout/PageHeader';
+import PedidosClientePendentes from '../../components/funcionarios/PedidosClientePendentes';
+import MesaCard from '../../components/mesas/MesaCard';
+import MesaFormModal from '../../components/mesas/MesaFormModal';
+import PainelMesa from '../../components/mesas/PainelMesa';
+import {
+  Button,
+  ConfirmDialog,
+  EmptyState,
+  IconClipboard,
+  IconPlus,
+  IconTrash,
+  Modal,
+  Spinner,
+} from '../../components/ui';
 import api from '../../api/axiosClient';
 import { useAuthStore } from '../../store/authStore';
 import { useSocket } from '../../hooks/useSocket';
-import { agruparItens } from '../../utils/agruparItens';
-import PedidosClientePendentes from '../../components/funcionarios/PedidosClientePendentes';
+import { toast } from '../../store/toastStore';
+import { mensagemErro } from '../../utils/erroApi';
 
-// RF04 - Mapa de Mesas Geral
+const pad2 = (n) => String(n).padStart(2, '0');
+
+const LEGENDA = [
+  { cor: 'bg-ok', titulo: 'Verde: mesa livre', texto: 'Sem comanda aberta. Dá para abrir ou remover.' },
+  { cor: 'bg-danger', titulo: 'Vermelha: mesa aberta', texto: 'Tem comanda em andamento. O cronômetro conta desde a abertura.' },
+  { cor: 'bg-kds-preparo', titulo: 'Laranja: aguardando fechamento', texto: 'O garçom pediu a conta; falta o pagamento.' },
+];
+
+// RF04 - Mapa de Mesas Geral + painel da mesa (comandas, desconto e fechamento)
 export default function MesasComandas() {
-  const [mesas, setMesas] = useState([]);
-  const [mesaSelecionada, setMesaSelecionada] = useState(null);
-  const socketRef = useSocket(['mapa-mesas']);
+  const funcionario = useAuthStore((s) => s.funcionario);
+  const administrador = funcionario?.perfil === 'administrador';
 
-  const carregarMesas = useCallback(() => {
-    api.get('/mesas').then((r) => setMesas(r.data));
+  const [mesas, setMesas] = useState(null); // null = carregando
+  const [erro, setErro] = useState('');
+  const [selecionadaId, setSelecionadaId] = useState(null);
+  const [sinal, setSinal] = useState(0); // muda quando algo ao vivo pede para o painel recarregar
+  const [modal, setModal] = useState(null); // { tipo: 'mesa' | 'remover' | 'ajuda', numero? }
+  const [removendo, setRemovendo] = useState(false);
+
+  // A mesa selecionada é derivada da lista: assim cada atualização ao vivo chega no painel sozinha.
+  const mesaSelecionada = mesas?.find((m) => m._id === selecionadaId) ?? null;
+
+  const selecionadaRef = useRef(null);
+  selecionadaRef.current = selecionadaId;
+
+  const carregarMesas = useCallback(async () => {
+    try {
+      const { data } = await api.get('/mesas');
+      setMesas(data);
+      setErro('');
+    } catch (err) {
+      setErro(mensagemErro(err, 'Não foi possível carregar as mesas.'));
+    }
   }, []);
 
   useEffect(() => {
     carregarMesas();
   }, [carregarMesas]);
 
+  // Tempo real (RF04): o mapa muda sozinho; o painel recarrega quando a mesa aberta é afetada.
+  const socketRef = useSocket(['mapa-mesas']);
   useEffect(() => {
     const socket = socketRef.current;
-    if (!socket) return;
-    socket.on('mesa:atualizada', (mesaAtualizada) => {
-      setMesas((atual) => atual.map((m) => (m._id === mesaAtualizada._id ? mesaAtualizada : m)));
-      setMesaSelecionada((atual) => (atual?._id === mesaAtualizada._id ? mesaAtualizada : atual));
-    });
-    return () => {
-      socket.off('mesa:atualizada');
+    if (!socket) return undefined;
+
+    const aoAtualizarMesa = (mesaAtualizada) => {
+      setMesas((atual) => atual?.map((m) => (m._id === mesaAtualizada._id ? mesaAtualizada : m)) ?? atual);
+      if (mesaAtualizada._id === selecionadaRef.current) setSinal((s) => s + 1);
     };
-  }, [socketRef]);
-
-  const corBorda = (status) => (status === 'livre' ? 'border-green-500' : 'border-red-500');
-
-  const adicionarMesa = async () => {
-    const proximoNumero = mesas.length ? Math.max(...mesas.map((m) => m.numero)) + 1 : 1;
-    const numeroStr = window.prompt('Número da nova mesa:', proximoNumero);
-    if (numeroStr == null) return;
-
-    const numero = Number(numeroStr);
-    if (!numero || numero <= 0) {
-      window.alert('Número de mesa inválido.');
-      return;
-    }
-
-    try {
-      await api.post('/mesas', { numero });
+    const aoMudarItemNaCozinha = () => setSinal((s) => s + 1);
+    // se a conexão caiu e voltou, busca de novo o que pode ter sido perdido
+    const aoReconectar = () => {
       carregarMesas();
-    } catch (err) {
-      window.alert(err.response?.data?.erro || 'Erro ao adicionar mesa.');
-    }
-  };
+      setSinal((s) => s + 1);
+    };
 
-  const removerMesa = async () => {
-    if (!mesaSelecionada) {
-      window.alert('Selecione uma mesa para remover.');
-      return;
-    }
-    if (mesaSelecionada.status !== 'livre') {
-      window.alert('Só é possível remover mesas livres.');
-      return;
-    }
-    const confirmar = window.confirm(
-      `Remover a Mesa ${String(mesaSelecionada.numero).padStart(2, '0')}?`
-    );
-    if (!confirmar) return;
+    socket.on('mesa:atualizada', aoAtualizarMesa);
+    socket.on('kds:status-atualizado', aoMudarItemNaCozinha);
+    socket.on('connect', aoReconectar);
+    return () => {
+      socket.off('mesa:atualizada', aoAtualizarMesa);
+      socket.off('kds:status-atualizado', aoMudarItemNaCozinha);
+      socket.off('connect', aoReconectar);
+    };
+  }, [socketRef, carregarMesas]);
 
-    try {
-      await api.delete(`/mesas/${mesaSelecionada._id}`);
-      setMesaSelecionada(null);
+  // O painel avisa quando a mesa mudou (abriu, fechou, reabriu): atualiza já, sem esperar o socket.
+  const aoMesaMudar = useCallback(
+    (mesaAtualizada) => {
+      if (mesaAtualizada) {
+        setMesas((atual) => atual?.map((m) => (m._id === mesaAtualizada._id ? mesaAtualizada : m)) ?? atual);
+      }
       carregarMesas();
-    } catch (err) {
-      window.alert(err.response?.data?.erro || 'Erro ao remover mesa.');
-    }
-  };
-
-  return (
-    <AdminLayout>
-      <h1 className="text-lg font-semibold">Mesas e Comandas</h1>
-      <p className="mb-4 text-sm text-neutral-500">
-        Acompanhe suas mesas e gerencie os pedidos em atendimento
-      </p>
-
-      {/* Autoatendimento: pedidos de clientes aguardando aceite (mesma fila do garçom) */}
-      <PedidosClientePendentes />
-
-      <div className="grid grid-cols-[1fr_380px] gap-6">
-        <div>
-          <div className="grid grid-cols-4 gap-4">
-            {mesas.map((mesa) => (
-              <button
-                key={mesa._id}
-                onClick={() => setMesaSelecionada(mesa)}
-                className={`rounded-lg border-2 p-4 text-center ${corBorda(mesa.status)} ${
-                  mesaSelecionada?._id === mesa._id ? 'ring-2 ring-primary' : ''
-                }`}
-              >
-                <p className="text-2xl font-bold">{String(mesa.numero).padStart(2, '0')}</p>
-                <p className="text-sm">Mesa</p>
-              </button>
-            ))}
-          </div>
-
-          <div className="mt-4 flex gap-2">
-            <button
-              onClick={adicionarMesa}
-              className="rounded-md bg-neutral-900 px-4 py-2 text-sm text-white"
-            >
-              + Adicionar Mesa
-            </button>
-            <button
-              onClick={removerMesa}
-              className="rounded-md bg-red-600 px-4 py-2 text-sm text-white"
-            >
-              Remover
-            </button>
-          </div>
-        </div>
-
-        {mesaSelecionada ? (
-          <PainelMesa
-            mesa={mesaSelecionada}
-            onMesaFechada={() => {
-              setMesaSelecionada(null);
-              carregarMesas();
-            }}
-            onMesaAtualizada={(mesaAtualizada) => {
-              setMesaSelecionada(mesaAtualizada);
-              carregarMesas();
-            }}
-          />
-        ) : (
-          <p className="text-sm text-neutral-400">Selecione uma mesa para ver a comanda.</p>
-        )}
-      </div>
-    </AdminLayout>
+    },
+    [carregarMesas]
   );
-}
 
-// Painel "MESA 00" do design: comandas, itens, desconto, total e fechamento
-function PainelMesa({ mesa, onMesaFechada, onMesaAtualizada }) {
-  const [comandas, setComandas] = useState([]);
-  const [produtos, setProdutos] = useState([]);
-  const [expandidos, setExpandidos] = useState({}); // grupos de itens abertos para estornar uma unidade/lançamento
-  const funcionario = useAuthStore((s) => s.funcionario);
-  const podeAplicarDesconto = funcionario?.perfil === 'administrador';
-  const podeReabrir = funcionario?.perfil === 'administrador'; // RF12
+  const proximoNumero = mesas?.length ? Math.max(...mesas.map((m) => m.numero)) + 1 : 1;
 
-  const carregarComandas = useCallback(() => {
-    api.get(`/comandas/mesa/${mesa._id}`).then((r) => setComandas(r.data));
-  }, [mesa._id]);
+  async function adicionarMesa(numero) {
+    await api.post('/mesas', { numero });
+    toast.success('Mesa adicionada', `Mesa ${pad2(numero)}`);
+    setModal(null);
+    await carregarMesas();
+  }
 
-  useEffect(() => {
-    carregarComandas();
-  }, [carregarComandas]);
-
-  useEffect(() => {
-    api.get('/produtos', { params: { disponivel: true } }).then((r) => setProdutos(r.data));
-  }, []);
-
-  // só as comandas em aberto contam para exibição e para o total pendente
-  const comandasAbertas = comandas.filter((c) => c.status === 'aberta');
-
-  // NOVO - abre uma comanda (primeira ou adicional, independente do status atual da mesa)
-  const abrirNovaComanda = async () => {
+  // RNF11 - "remover" é inativar; o backend só aceita com a mesa livre.
+  async function removerMesa() {
+    setRemovendo(true);
     try {
-      const { data } = await api.post('/comandas/abrir', { mesaId: mesa._id });
-      onMesaAtualizada(data.mesa);
-      carregarComandas();
+      await api.delete(`/mesas/${selecionadaId}`);
+      toast.success('Mesa removida', `Mesa ${pad2(modal.numero)}`);
+      setSelecionadaId(null);
+      await carregarMesas();
     } catch (err) {
-      window.alert(err.response?.data?.erro || 'Erro ao abrir comanda.');
+      toast.error('Não foi possível remover a mesa', mensagemErro(err, 'Tente de novo.'));
+    } finally {
+      setRemovendo(false);
+      setModal(null);
     }
-  };
+  }
 
-  const adicionarItem = async (comandaId) => {
-    if (!produtos.length) {
-      window.alert('Nenhum produto cadastrado no cardápio ainda.');
-      return;
-    }
+  const motivoSemRemover = !mesaSelecionada
+    ? 'Selecione uma mesa para remover.'
+    : mesaSelecionada.status !== 'livre'
+      ? 'Só dá para remover uma mesa livre.'
+      : undefined;
 
-    const listaProdutos = produtos
-      .map((p, i) => `${i + 1}. ${p.nome} - R$ ${p.preco.toFixed(2)}`)
-      .join('\n');
-    const escolha = window.prompt(`Escolha o produto (digite o número):\n${listaProdutos}`);
-    const indice = Number(escolha) - 1;
-    const produtoEscolhido = produtos[indice];
-    if (!produtoEscolhido) return;
-
-    const quantidadeStr = window.prompt('Quantidade:', '1');
-    const quantidade = Number(quantidadeStr) || 1;
-
-    const observacao = window.prompt('Observação (opcional):') || '';
-
-    try {
-      await api.post(`/comandas/${comandaId}/itens`, {
-        produtoId: produtoEscolhido._id,
-        quantidade,
-        observacao: observacao.trim(),
-      });
-      carregarComandas();
-    } catch (err) {
-      window.alert(err.response?.data?.erro || 'Erro ao adicionar item.');
-    }
-  };
-
-  const estornarItem = async (comandaId, itemId) => {
-    const motivo = window.prompt('Motivo do estorno (obrigatório):'); // RF08
-    if (!motivo?.trim()) return;
-    await api.patch(`/comandas/${comandaId}/itens/${itemId}/estornar`, { motivo });
-    carregarComandas();
-  };
-
-  const aplicarDesconto = async (comandaId, valorAtual) => {
-    const valor = window.prompt('Desconto em % sobre o subtotal:', valorAtual || 0);
-    if (valor == null) return;
-    await api.patch(`/comandas/${comandaId}/desconto`, {
-      tipo: 'percentual',
-      valor: Number(valor) || 0,
-    });
-    carregarComandas();
-  };
-
-  // NOVO - fecha e paga uma comanda específica (divisão de conta)
-  const fecharComandaIndividual = async (comanda) => {
-    const total = calcularTotal(comanda);
-    const valorStr = window.prompt(
-      `Total da Comanda #${comanda.numero}: R$ ${total.toFixed(2)}\nValor recebido em dinheiro:`,
-      total.toFixed(2)
-    );
-    if (valorStr == null) return;
-
-    const valor = Number(valorStr) || 0;
-    if (valor < total) {
-      window.alert(
-        `Valor insuficiente. Faltam R$ ${(total - valor).toFixed(2)} para completar o total.`
-      );
-      return;
-    }
-
-    try {
-      await api.post(`/pagamentos/comanda/${comanda._id}/fechar`, {
-        metodos: [{ tipo: 'dinheiro', valor }],
-      });
-      carregarComandas();
-    } catch (err) {
-      window.alert(err.response?.data?.erro || 'Erro ao fechar comanda.');
-    }
-  };
-
-  // RF12 - desfaz um fechamento feito por engano: volta a mesa para
-  // "ocupada", reabre a(s) comanda(s) e estorna o pagamento já processado.
-  const reabrirMesa = async () => {
-    const confirmar = window.confirm(
-      'Reabrir esta mesa? O último pagamento será estornado e a comanda volta a ficar aberta.'
-    );
-    if (!confirmar) return;
-
-    try {
-      const { data } = await api.patch(`/mesas/${mesa._id}/reabrir`);
-      onMesaAtualizada(data.mesa);
-    } catch (err) {
-      window.alert(err.response?.data?.erro || 'Erro ao reabrir mesa.');
-    }
-  };
-
-  const totalMesa = comandasAbertas.reduce((soma, c) => soma + calcularTotal(c), 0);
-
-  // fecha e paga TODAS as comandas abertas da mesa de uma vez
-  const fecharMesa = async () => {
-    const valorStr = window.prompt(
-      `Total da mesa: R$ ${totalMesa.toFixed(2)}\nValor recebido em dinheiro:`,
-      totalMesa.toFixed(2)
-    );
-    if (valorStr == null) return;
-
-    const valor = Number(valorStr) || 0;
-    if (valor < totalMesa) {
-      window.alert(
-        `Valor insuficiente. Faltam R$ ${(totalMesa - valor).toFixed(2)} para completar o total.`
-      );
-      return;
-    }
-
-    try {
-      await api.post(`/pagamentos/mesa/${mesa._id}/fechar`, {
-        metodos: [{ tipo: 'dinheiro', valor }],
-      });
-      onMesaFechada();
-    } catch (err) {
-      window.alert(err.response?.data?.erro || 'Erro ao fechar mesa.');
-    }
-  };
-
-  return (
-    <div className="rounded-lg border p-4">
-      <div className="mb-3 flex items-center justify-between">
-        <div>
-          <p className="text-xs text-neutral-500">MESA</p>
-          <p className="text-2xl font-bold">{String(mesa.numero).padStart(2, '0')}</p>
-        </div>
-        <span
-          className={`rounded-full px-2 py-1 text-xs ${
-            mesa.status === 'livre' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
-          }`}
-        >
-          {mesa.status === 'livre' ? 'Livre' : 'Aberta'}
-        </span>
-      </div>
-
-      {/* agora sempre visível (exceto aguardando fechamento) — permite abrir
-          quantas comandas forem necessárias na mesma mesa */}
-      {mesa.status !== 'aguardando_fechamento' && (
-        <button
-          onClick={abrirNovaComanda}
-          className="mb-4 w-full rounded-md border border-primary py-2 text-sm font-medium text-primary"
-        >
-          + Nova Comanda
-        </button>
-      )}
-
-      {/* RF12 - só existe algo a desfazer quando a mesa já foi fechada */}
-      {mesa.status === 'livre' && podeReabrir && (
-        <button
-          onClick={reabrirMesa}
-          className="mb-4 w-full rounded-md border border-yellow-500 py-2 text-sm font-medium text-yellow-700"
-        >
-          ↺ Reabrir mesa (desfazer último fechamento)
-        </button>
-      )}
-
-      {!comandasAbertas.length && (
-        <p className="text-sm text-neutral-400">Nenhuma comanda aberta.</p>
-      )}
-
-      {comandasAbertas.map((comanda) => (
-        <div key={comanda._id} className="mb-4 rounded-md border p-3">
-          <div className="mb-2 flex items-center justify-between">
-            <p className="text-sm font-semibold">Comanda #{comanda.numero}</p>
-            <span className="text-xs text-neutral-500">{comanda.status}</span>
-          </div>
-
-          <table className="w-full text-sm">
-            <thead className="text-left text-xs text-neutral-500">
-              <tr>
-                <th className="pb-1">Item</th>
-                <th>Qtd</th>
-                <th className="text-right">Valor</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {/* itens iguais empilhados (2x Hamburguer). Para estornar, abra o grupo (▸):
-                  cada lançamento original continua com o seu próprio ✕. */}
-              {agruparItens(
-                comanda.itens.filter((i) => !i.estornado),
-                (i) => i.statusKDS
-              ).map((grupo) => {
-                const varios = grupo.itens.length > 1;
-                const chaveGrupo = `${comanda._id}|${grupo.chave}`;
-                const aberto = !!expandidos[chaveGrupo];
-                return (
-                  <Fragment key={grupo.chave}>
-                    <tr className="border-t">
-                      <td className="py-1">
-                        {varios && (
-                          <button
-                            onClick={() =>
-                              setExpandidos((atual) => ({ ...atual, [chaveGrupo]: !aberto }))
-                            }
-                            className="mr-1 text-xs text-neutral-500"
-                            title="Ver os lançamentos deste item"
-                          >
-                            {aberto ? '▾' : '▸'}
-                          </button>
-                        )}
-                        {grupo.nomeProduto}
-                        {grupo.observacao && (
-                          <span className="block text-xs text-neutral-500">{grupo.observacao}</span>
-                        )}
-                        {varios && (
-                          <span className="block text-xs text-neutral-400">
-                            {grupo.itens.length} lançamentos
-                          </span>
-                        )}
-                      </td>
-                      <td>{grupo.quantidade}</td>
-                      <td className="text-right">
-                        R$ {(grupo.precoUnitario * grupo.quantidade).toFixed(2)}
-                      </td>
-                      <td className="pl-2 text-right">
-                        {!varios && (
-                          <button
-                            onClick={() => estornarItem(comanda._id, grupo.itens[0]._id)}
-                            className="text-xs text-red-600"
-                            title="Estornar item (RF07/RF08)"
-                          >
-                            ✕
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                    {varios &&
-                      aberto &&
-                      grupo.itens.map((item) => (
-                        <tr key={item._id} className="bg-neutral-50 text-xs text-neutral-600">
-                          <td className="py-1 pl-5">
-                            {item.quantidade}x
-                            {item.origem === 'cliente' && (
-                              <span className="ml-1 text-neutral-400">(pedido do cliente)</span>
-                            )}
-                          </td>
-                          <td />
-                          <td className="text-right">
-                            R$ {(item.precoUnitario * item.quantidade).toFixed(2)}
-                          </td>
-                          <td className="pl-2 text-right">
-                            <button
-                              onClick={() => estornarItem(comanda._id, item._id)}
-                              className="text-xs text-red-600"
-                              title="Estornar este lançamento (RF07/RF08)"
-                            >
-                              ✕
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                  </Fragment>
-                );
-              })}
-            </tbody>
-          </table>
-
-          <div className="mt-2 flex items-center justify-between">
-            <button
-              onClick={() => adicionarItem(comanda._id)}
-              className="text-xs font-medium text-primary underline"
-            >
-              + Adicionar item
-            </button>
-
-            {/* NOVO - fecha só esta comanda (divisão de conta) */}
-            <button
-              onClick={() => fecharComandaIndividual(comanda)}
-              className="text-xs font-medium text-green-700 underline"
-            >
-              Fechar comanda
-            </button>
-          </div>
-
-          {podeAplicarDesconto && (
-            <button
-              onClick={() => aplicarDesconto(comanda._id, comanda.desconto?.valor)}
-              className="mt-2 block text-xs text-primary underline"
-            >
-              {comanda.desconto?.valor
-                ? `Desconto: ${comanda.desconto.valor}%`
-                : 'Aplicar desconto'}
-            </button>
-          )}
-
-          <div className="mt-2 flex justify-between border-t pt-2 text-sm font-semibold">
-            <span>Total da comanda</span>
-            <span>R$ {calcularTotal(comanda).toFixed(2)}</span>
-          </div>
-        </div>
-      ))}
-
-      {!!comandasAbertas.length && (
-        <>
-          <div className="mb-3 flex justify-between border-t pt-3 text-base font-bold">
-            <span>TOTAL DA MESA</span>
-            <span>R$ {totalMesa.toFixed(2)}</span>
-          </div>
-          <button
-            onClick={fecharMesa}
-            className="w-full rounded-md bg-primary py-2 text-sm font-medium text-white"
-          >
-            ✓ Fechar Mesa (todas as comandas)
-          </button>
-        </>
-      )}
+  const painel = mesaSelecionada ? (
+    <PainelMesa
+      key={mesaSelecionada._id}
+      mesa={mesaSelecionada}
+      sinal={sinal}
+      podeDesconto={administrador}
+      podeReabrir={administrador}
+      onMesaMudou={aoMesaMudar}
+    />
+  ) : (
+    <div className="flex flex-1 items-center justify-center">
+      <EmptyState
+        icon={<IconClipboard className="h-8 w-8" />}
+        title="Selecione uma mesa"
+        description="Escolha uma mesa no mapa para ver as comandas e lançar pedidos."
+      />
     </div>
   );
-}
 
-function calcularTotal(comanda) {
-  const subtotal = comanda.itens
-    .filter((i) => !i.estornado)
-    .reduce((soma, i) => soma + i.precoUnitario * i.quantidade, 0);
+  return (
+    <AdminLayout painel={painel}>
+      <div className="flex min-h-[calc(100vh-4rem)] flex-col">
+        <PageHeader
+          titulo="Mesas e Comandas"
+          descricao="Acompanhe suas mesas e gerencie os pedidos em atendimento"
+          onAjuda={() => setModal({ tipo: 'ajuda' })}
+        />
 
-  const valorDesconto =
-    comanda.desconto?.tipo === 'percentual'
-      ? subtotal * ((comanda.desconto.valor || 0) / 100)
-      : comanda.desconto?.valor || 0;
+        {/* Autoatendimento: pedidos de clientes aguardando aceite (mesma fila do garçom) */}
+        <PedidosClientePendentes />
 
-  return subtotal - valorDesconto + (comanda.taxaServico?.valor || 0);
+        {mesas === null ? (
+          <div className="flex justify-center py-16 text-ink-soft">
+            {erro ? (
+              <div className="text-center">
+                <p className="mb-3 text-sm text-danger-ink">{erro}</p>
+                <Button variant="secondary" size="sm" onClick={carregarMesas}>
+                  Tentar de novo
+                </Button>
+              </div>
+            ) : (
+              <Spinner className="h-6 w-6" label="Carregando mesas" />
+            )}
+          </div>
+        ) : mesas.length === 0 ? (
+          <EmptyState
+            icon={<IconClipboard className="h-10 w-10" />}
+            title="Nenhuma mesa cadastrada"
+            description={
+              administrador
+                ? 'Adicione as mesas do salão para começar a abrir comandas.'
+                : 'Peça a um administrador para cadastrar as mesas do salão.'
+            }
+            action={
+              administrador && (
+                <Button leftIcon={<IconPlus className="h-4 w-4" />} onClick={() => setModal({ tipo: 'mesa' })}>
+                  Adicionar Mesa
+                </Button>
+              )
+            }
+          />
+        ) : (
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(10rem,1fr))] gap-x-1 gap-y-2">
+            {mesas.map((mesa) => (
+              <MesaCard
+                key={mesa._id}
+                mesa={mesa}
+                selecionada={mesa._id === selecionadaId}
+                onSelecionar={(m) => setSelecionadaId(m._id)}
+              />
+            ))}
+          </div>
+        )}
+
+        {/* Cadastro do salão: só o administrador (o backend também barra os outros perfis) */}
+        {administrador && mesas?.length > 0 && (
+          <div className="mt-auto flex gap-2 pt-8">
+            <Button
+              variant="strong"
+              leftIcon={<IconPlus className="h-4 w-4" />}
+              onClick={() => setModal({ tipo: 'mesa' })}
+            >
+              Adicionar Mesa
+            </Button>
+            <Button
+              variant="danger"
+              leftIcon={<IconTrash className="h-4 w-4" />}
+              disabled={Boolean(motivoSemRemover)}
+              title={motivoSemRemover}
+              onClick={() => setModal({ tipo: 'remover', numero: mesaSelecionada.numero })}
+            >
+              Remover
+            </Button>
+          </div>
+        )}
+      </div>
+
+      {modal?.tipo === 'mesa' && (
+        <MesaFormModal numeroSugerido={proximoNumero} onSalvar={adicionarMesa} onFechar={() => setModal(null)} />
+      )}
+
+      <ConfirmDialog
+        open={modal?.tipo === 'remover'}
+        title={`Remover a mesa ${pad2(modal?.numero ?? 0)}?`}
+        message="A mesa sai do mapa. O histórico de comandas e pagamentos dela continua guardado."
+        confirmLabel="Remover mesa"
+        loading={removendo}
+        onConfirm={removerMesa}
+        onCancel={() => setModal(null)}
+      />
+
+      <Modal
+        open={modal?.tipo === 'ajuda'}
+        onClose={() => setModal(null)}
+        title="Como ler o mapa de mesas"
+        size="sm"
+        footer={<Button onClick={() => setModal(null)}>Entendi</Button>}
+      >
+        <ul className="space-y-4">
+          {LEGENDA.map(({ cor, titulo, texto }) => (
+            <li key={titulo} className="flex gap-3">
+              <span className={`mt-1 h-3 w-8 shrink-0 rounded-full ${cor}`} aria-hidden="true" />
+              <div>
+                <p className="text-sm font-semibold">{titulo}</p>
+                <p className="text-sm text-ink-soft">{texto}</p>
+              </div>
+            </li>
+          ))}
+        </ul>
+        <p className="mt-5 border-t border-line pt-4 text-sm text-ink-soft">
+          Toque numa mesa para ver as comandas, lançar itens e fechar a conta. O mapa e o painel
+          atualizam sozinhos quando outro funcionário mexe na mesma mesa.
+        </p>
+      </Modal>
+    </AdminLayout>
+  );
 }

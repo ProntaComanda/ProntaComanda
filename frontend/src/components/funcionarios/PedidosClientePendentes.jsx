@@ -83,41 +83,41 @@ export default function PedidosClientePendentes() {
   if (!pedidos.length && !erro) return null;
 
   return (
-    <section className="mb-4 rounded-lg border-2 border-primary bg-orange-50 p-3">
-      <h2 className="mb-2 text-sm font-semibold text-primary-dark">
+    <section className="mb-4 rounded-lg border-2 border-primary bg-warn-soft p-3">
+      <h2 className="mb-2 text-sm font-semibold text-warn-ink">
         {pedidos.length === 1
           ? '1 pedido de cliente aguardando confirmação'
           : `${pedidos.length} pedidos de clientes aguardando confirmação`}
       </h2>
 
-      {erro && <p className="mb-2 text-sm text-red-600">{erro}</p>}
+      {erro && <p className="mb-2 text-sm text-danger-ink">{erro}</p>}
 
       <ul className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
         {pedidos.map((p) => {
           const total = p.itens.reduce((s, i) => s + i.quantidade * i.precoUnitario, 0);
           return (
-            <li key={p._id} className="flex flex-col rounded-md border bg-white p-3">
+            <li key={p._id} className="flex flex-col rounded-md border border-line bg-surface p-3">
               <div className="flex items-baseline justify-between">
                 <p className="font-semibold">
                   Mesa {String(p.mesa?.numero ?? '?').padStart(2, '0')}
                   {p.nomeCliente && (
-                    <span className="ml-2 text-sm font-normal text-neutral-500">
+                    <span className="ml-2 text-sm font-normal text-ink-soft">
                       {p.nomeCliente}
                     </span>
                   )}
                 </p>
-                <span className="text-xs text-neutral-400">{haQuantoTempo(p.createdAt, agora)}</span>
+                <span className="text-xs text-ink-faint">{haQuantoTempo(p.createdAt, agora)}</span>
               </div>
 
               <ul className="my-2 text-sm">
                 {p.itens.map((i, idx) => (
                   <li key={idx}>
                     {i.quantidade}× {i.nomeProduto}
-                    {i.observacao && <span className="text-neutral-500"> — {i.observacao}</span>}
+                    {i.observacao && <span className="text-ink-soft"> — {i.observacao}</span>}
                   </li>
                 ))}
               </ul>
-              <p className="mb-3 text-xs text-neutral-500">Total: {dinheiro(total)}</p>
+              <p className="mb-3 text-xs text-ink-soft">Total: {dinheiro(total)}</p>
 
               {recusando === p._id ? (
                 <div className="mt-auto space-y-2">
@@ -126,13 +126,13 @@ export default function PedidosClientePendentes() {
                     onChange={(e) => setMotivo(e.target.value)}
                     maxLength={140}
                     placeholder="Motivo (opcional, o cliente vê)"
-                    className="w-full rounded-md border px-3 py-1.5 text-sm"
+                    className="w-full rounded-md border border-line bg-surface px-3 py-1.5 text-sm text-ink"
                   />
                   <div className="flex gap-2">
                     <button
                       disabled={ocupado === p._id}
                       onClick={() => tratar(p._id, 'recusar', { motivo: motivo.trim() || undefined })}
-                      className="flex-1 rounded-md bg-red-600 py-2 text-sm font-medium text-white disabled:opacity-60"
+                      className="flex-1 rounded-md bg-danger py-2 text-sm font-medium text-white disabled:opacity-60"
                     >
                       Confirmar recusa
                     </button>
@@ -141,7 +141,7 @@ export default function PedidosClientePendentes() {
                         setRecusando(null);
                         setMotivo('');
                       }}
-                      className="rounded-md border px-3 py-2 text-sm"
+                      className="rounded-md border border-line px-3 py-2 text-sm"
                     >
                       Voltar
                     </button>
@@ -159,7 +159,7 @@ export default function PedidosClientePendentes() {
                   <button
                     disabled={ocupado === p._id}
                     onClick={() => setRecusando(p._id)}
-                    className="rounded-md border border-red-300 px-4 py-2 text-sm text-red-600"
+                    className="rounded-md border border-danger px-4 py-2 text-sm text-danger-ink"
                   >
                     Recusar
                   </button>

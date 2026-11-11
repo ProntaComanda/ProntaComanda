@@ -54,7 +54,9 @@ function Avatar({ nome }) {
   );
 }
 
-export default function AdminLayout({ children }) {
+// `painel` (opcional): coluna fixa à direita, na altura da tela, como o painel "MESA 00" do
+// design. O conteúdo decide o próprio scroll (cabeçalho e rodapé fixos, miolo rolando).
+export default function AdminLayout({ children, painel }) {
   const funcionario = useAuthStore((s) => s.funcionario);
   const logout = useAuthStore((s) => s.logout);
   const aberta = useSidebarStore((s) => s.aberta);
@@ -164,6 +166,12 @@ export default function AdminLayout({ children }) {
       </div>
 
       <main className="min-w-0 flex-1 p-8">{children}</main>
+
+      {painel && (
+        <aside className="sticky top-0 flex h-screen w-[22.5rem] shrink-0 flex-col overflow-hidden border-l border-line bg-surface">
+          {painel}
+        </aside>
+      )}
     </div>
   );
 }
