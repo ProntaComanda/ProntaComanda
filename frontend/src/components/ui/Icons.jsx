@@ -206,3 +206,51 @@ export const IconBowl = (p) => (
     <path d="M8 21h8M16 3l-4 8" />
   </svg>
 );
+
+export const IconDollar = (p) => (
+  <svg {...base} {...p}>
+    <path d="M12 2v20" />
+    <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
+  </svg>
+);
+
+export const IconBag = (p) => (
+  <svg {...base} {...p}>
+    <path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z" />
+    <path d="M3 6h18" />
+    <path d="M16 10a4 4 0 0 1-8 0" />
+  </svg>
+);
+
+export const IconXSquare = (p) => (
+  <svg {...base} {...p}>
+    <rect x="3" y="3" width="18" height="18" rx="2" />
+    <path d="m9 9 6 6M15 9l-6 6" />
+  </svg>
+);
+
+export const IconTarget = (p) => (
+  <svg {...base} {...p}>
+    <circle cx="12" cy="12" r="10" />
+    <circle cx="12" cy="12" r="6" />
+    <circle cx="12" cy="12" r="2" />
+  </svg>
+);
+
+export const IconArrowUp = (p) => (
+  <svg {...base} {...p}>
+    <path d="M12 19V5M5 12l7-7 7 7" />
+  </svg>
+);
+
+export const IconArrowDown = (p) => (
+  <svg {...base} {...p}>
+    <path d="M12 5v14M19 12l-7 7-7-7" />
+  </svg>
+);
+
+export const IconDownload = (p) => (
+  <svg {...base} {...p}>
+    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" />
+  </svg>
+);

@@ -11,3 +11,7 @@ export function lerDinheiro(texto) {
   if (!limpo) return NaN;
   return Number(limpo.includes(',') ? limpo.replace(/\./g, '').replace(',', '.') : limpo);
 }
+
+// 45280.9 -> "R$ 45.280,90" (com separador de milhar; para valores grandes, como no Dashboard)
+export const moeda = (valor) =>
+  new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(valor ?? 0);

@@ -11,6 +11,8 @@
  * isso evitamos símbolos como setas ou travessões longos.
  */
 
+import { rotuloDoMes } from './mesesPt';
+
 const LARGURA = 210; // A4, em mm
 const ALTURA = 297;
 const MARGEM = 15;
@@ -31,28 +33,7 @@ const COR = {
   branco: [255, 255, 255],
 };
 
-// O servidor devolve o mês abreviado em inglês ("Dec", "Apr"...). No relatório
-// em português traduzimos; rótulos que já vierem em português passam direto.
-const MESES_EN_PT = {
-  jan: 'jan',
-  feb: 'fev',
-  mar: 'mar',
-  apr: 'abr',
-  may: 'mai',
-  jun: 'jun',
-  jul: 'jul',
-  aug: 'ago',
-  sep: 'set',
-  oct: 'out',
-  nov: 'nov',
-  dec: 'dez',
-};
-export const rotuloDoMes = (rotulo) =>
-  MESES_EN_PT[
-    String(rotulo ?? '')
-      .trim()
-      .toLowerCase()
-  ] ?? String(rotulo ?? '');
+export { rotuloDoMes };
 
 // O Intl usa um espaço "sem quebra" depois de "R$"; trocamos por espaço comum
 // para a fonte do PDF nunca mostrar um caractere estranho.

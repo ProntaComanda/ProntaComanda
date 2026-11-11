@@ -1,16 +1,23 @@
 import { useEffect, useState } from 'react';
-import Chart from 'react-apexcharts';
 import AdminLayout from '../../components/layout/AdminLayout';
+import PageHeader from '../../components/layout/PageHeader';
+import CartaoIndicador, { SetaVariacao } from '../../components/dashboard/CartaoIndicador';
+import GraficoConversao from '../../components/dashboard/GraficoConversao';
+import GraficoFaturamento from '../../components/dashboard/GraficoFaturamento';
+import ListaBarras from '../../components/dashboard/ListaBarras';
+import PainelDashboard from '../../components/dashboard/PainelDashboard';
+import { Button, IconBag, IconDollar, IconDownload, IconTarget, IconXSquare } from '../../components/ui';
 import api from '../../api/axiosClient';
+import { cn } from '../../lib/cn';
 import { useAuthStore } from '../../store/authStore';
+import { moeda } from '../../utils/dinheiro';
+import { decimal, inteiro } from '../../utils/numero';
 
-const formatarMoeda = (valor) =>
-  new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(valor ?? 0);
-
+// `comparacao` é o texto que acompanha a variação: o backend compara com o período anterior
 const PERIODOS = [
-  { valor: 'hoje', rotulo: 'Hoje' },
-  { valor: 'semana', rotulo: 'Esta semana' },
-  { valor: 'mes', rotulo: 'Este mês' },
+  { valor: 'hoje', rotulo: 'Hoje', comparacao: 'vs ontem' },
+  { valor: 'semana', rotulo: 'Esta semana', comparacao: 'vs 7 dias anteriores' },
+  { valor: 'mes', rotulo: 'Este mês', comparacao: 'vs mês anterior' },
 ];
 
 const ROTULO_STATUS = {
@@ -21,12 +28,6 @@ const ROTULO_STATUS = {
   cancelado: 'Cancelado',
 };
 
-// cores do tema (mesma paleta usada no resto do admin: laranja = destaque)
-const LARANJA = '#ea580c';
-const CINZA = '#d4d4d4';
-const VERDE = '#16a34a';
-const VERMELHO = '#f87171';
-
 // RF17 - Dashboard de Gestão (BI)
 export default function Dashboard() {
   const [periodo, setPeriodo] = useState('mes');
@@ -35,6 +36,7 @@ export default function Dashboard() {
   const [statusPedidos, setStatusPedidos] = useState([]);
   const [topProdutos, setTopProdutos] = useState([]);
   const [erro, setErro] = useState('');
+  const [tentativa, setTentativa] = useState(0); // "Tentar de novo" soma 1 e refaz a busca
   // período a que os dados na tela se referem (ao trocar o filtro, os números
   // antigos ficam até a resposta chegar; o PDF só libera quando já bateram)
   const [periodoCarregado, setPeriodoCarregado] = useState(null);
@@ -51,6 +53,7 @@ export default function Dashboard() {
   }, []);
 
   useEffect(() => {
+    let ativo = true; // se o filtro mudar antes da resposta, a resposta velha é descartada
     setErro('');
     Promise.all([
       api.get('/dashboard/visao-geral', { params: { periodo } }),
@@ -58,13 +61,20 @@ export default function Dashboard() {
       api.get('/dashboard/top-produtos', { params: { periodo } }),
     ])
       .then(([geral, status, produtos]) => {
+        if (!ativo) return;
         setVisaoGeral(geral.data);
         setStatusPedidos(status.data);
         setTopProdutos(produtos.data);
         setPeriodoCarregado(periodo);
       })
-      .catch(() => setErro('Não foi possível carregar o dashboard agora.'));
-  }, [periodo]);
+      .catch(() => ativo && setErro('Não foi possível carregar o dashboard agora.'));
+    return () => {
+      ativo = false;
+    };
+  }, [periodo, tentativa]);
+
+  const periodoAtual = PERIODOS.find((p) => p.valor === periodo);
+  const carregandoPeriodo = periodoCarregado !== periodo;
 
   // Exporta em PDF exatamente o que está na tela (mesmo período e mesmos números).
   const exportarPdf = async () => {
@@ -75,7 +85,7 @@ export default function Dashboard() {
       const { gerarRelatorioPdf } = await import('../../utils/gerarRelatorioPdf');
       await gerarRelatorioPdf({
         periodo,
-        periodoRotulo: PERIODOS.find((p) => p.valor === periodo)?.rotulo ?? periodo,
+        periodoRotulo: periodoAtual?.rotulo ?? periodo,
         geradoPor: funcionario?.nome,
         visaoGeral,
         faturamentoMensal,
@@ -92,213 +102,148 @@ export default function Dashboard() {
     }
   };
 
+  const ticket = visaoGeral?.ticketMedio;
+  const maiorProduto = topProdutos[0]?.valorTotal || 1;
+
   return (
     <AdminLayout>
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-lg font-semibold">Dashboard</h1>
-          <p className="text-sm text-neutral-500">Visão geral do seu negócio em tempo real</p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            onClick={exportarPdf}
-            disabled={gerandoPdf || periodoCarregado !== periodo}
-            className="rounded-md border px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
-            title="Baixa um relatório em PDF com os números do período selecionado"
-          >
-            {gerandoPdf ? 'Gerando PDF...' : 'Exportar PDF'}
-          </button>
-          <div className="flex rounded-md border p-1 text-sm">
-            {PERIODOS.map((p) => (
-              <button
-                key={p.valor}
-                onClick={() => setPeriodo(p.valor)}
-                className={`rounded px-3 py-1 ${
-                  periodo === p.valor ? 'bg-primary text-white' : 'text-neutral-600'
-                }`}
-              >
-                {p.rotulo}
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
+      <PageHeader titulo="Dashboard" descricao="Visão geral do seu negócio em tempo real" />
 
-      {erro && <p className="mb-3 text-sm text-red-600">{erro}</p>}
+      <div className="mb-6 flex flex-wrap items-center justify-end gap-3">
+        <Button
+          variant="secondary"
+          size="sm"
+          leftIcon={<IconDownload className="h-4 w-4" />}
+          onClick={exportarPdf}
+          loading={gerandoPdf}
+          disabled={carregandoPeriodo}
+          title="Baixa um relatório em PDF com os números do período selecionado"
+        >
+          Exportar PDF
+        </Button>
 
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-5">
-        <Cartao titulo="Ganhos Totais" item={visaoGeral?.ganhoTotal} formato={formatarMoeda} />
-        <Cartao titulo="Total de Pedidos" item={visaoGeral?.totalPedidos} />
-        <Cartao titulo="Ticket Médio" item={visaoGeral?.ticketMedio} formato={formatarMoeda} />
-        <Cartao
-          titulo="Pedidos Cancelados"
-          item={visaoGeral?.pedidosCancelados}
-          corVariacaoInvertida
-        />
-        <Cartao titulo="Taxa de Conversão" item={visaoGeral?.taxaConversao} sufixo="%" />
-      </div>
-
-      <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <div className="rounded-lg border p-4 lg:col-span-2">
-          <h2 className="mb-3 text-sm font-semibold text-neutral-600">Faturamento por mês</h2>
-          <GraficoFaturamento dados={faturamentoMensal} />
-        </div>
-        <div className="rounded-lg border p-4">
-          <h2 className="mb-3 text-sm font-semibold text-neutral-600">Taxa de conversão</h2>
-          <GraficoConversao percentual={visaoGeral?.taxaConversao?.valor ?? 0} />
+        <div
+          role="group"
+          aria-label="Período"
+          className="inline-flex gap-1 rounded-lg border border-l-4 border-line border-l-primary bg-surface p-1"
+        >
+          {PERIODOS.map((p) => (
+            <button
+              key={p.valor}
+              type="button"
+              aria-pressed={periodo === p.valor}
+              onClick={() => setPeriodo(p.valor)}
+              className={cn(
+                'h-9 rounded-md px-4 text-sm font-semibold transition',
+                periodo === p.valor ? 'bg-brand-gradient text-white shadow-sm' : 'text-ink-soft hover:text-ink'
+              )}
+            >
+              {p.rotulo}
+            </button>
+          ))}
         </div>
       </div>
 
-      <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <div className="rounded-lg border p-4">
-          <h2 className="mb-3 text-sm font-semibold text-neutral-600">Top 5 produtos</h2>
-          <ListaComBarras
-            vazio="Nenhum produto vendido neste período."
-            itens={topProdutos.map((p, i) => ({
-              chave: p.nomeProduto,
-              rotulo: `${i + 1}. ${p.nomeProduto}`,
-              valor: p.valorTotal,
-              proporcao: topProdutos[0] ? p.valorTotal / topProdutos[0].valorTotal : 0,
-              extra: formatarMoeda(p.valorTotal),
-            }))}
+      {erro && (
+        <div
+          role="alert"
+          className="mb-4 flex items-center justify-between gap-3 rounded-md bg-danger-soft px-4 py-2 text-sm text-danger-ink"
+        >
+          <span>{erro}</span>
+          <Button variant="secondary" size="sm" onClick={() => setTentativa((n) => n + 1)}>
+            Tentar de novo
+          </Button>
+        </div>
+      )}
+
+      <div className={cn('space-y-6 transition-opacity', carregandoPeriodo && visaoGeral && 'opacity-60')} aria-busy={carregandoPeriodo}>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <CartaoIndicador
+            titulo="Ganhos totais"
+            Icone={IconDollar}
+            valor={moeda(visaoGeral?.ganhoTotal?.valor)}
+            variacao={visaoGeral?.ganhoTotal?.variacao}
+            comparacao={periodoAtual.comparacao}
+            carregando={!visaoGeral}
+            extra={
+              visaoGeral && (
+                <p className="flex items-center justify-between gap-2 border-t border-line pt-3 text-xs">
+                  <span className="text-ink-soft">Ticket médio</span>
+                  <span className="flex items-center gap-2">
+                    <span className="font-semibold tabular-nums">{moeda(ticket?.valor)}</span>
+                    <SetaVariacao variacao={ticket?.variacao} />
+                  </span>
+                </p>
+              )
+            }
+          />
+          <CartaoIndicador
+            titulo="Total de pedidos"
+            Icone={IconBag}
+            valor={inteiro(visaoGeral?.totalPedidos?.valor)}
+            variacao={visaoGeral?.totalPedidos?.variacao}
+            comparacao={periodoAtual.comparacao}
+            carregando={!visaoGeral}
+          />
+          <CartaoIndicador
+            titulo="Pedidos cancelados"
+            Icone={IconXSquare}
+            valor={inteiro(visaoGeral?.pedidosCancelados?.valor)}
+            variacao={visaoGeral?.pedidosCancelados?.variacao}
+            comparacao={periodoAtual.comparacao}
+            invertido
+            carregando={!visaoGeral}
+          />
+          <CartaoIndicador
+            titulo="Taxa de conversão"
+            Icone={IconTarget}
+            valor={`${decimal(visaoGeral?.taxaConversao?.valor)}%`}
+            variacao={visaoGeral?.taxaConversao?.variacao}
+            comparacao={periodoAtual.comparacao}
+            carregando={!visaoGeral}
           />
         </div>
-        <div className="rounded-lg border p-4">
-          <h2 className="mb-3 text-sm font-semibold text-neutral-600">Status dos pedidos</h2>
-          <ListaComBarras
-            vazio="Nenhum pedido neste período."
-            itens={statusPedidos
-              .filter((s) => s.quantidade > 0)
-              .map((s) => ({
-                chave: s.status,
-                rotulo: ROTULO_STATUS[s.status] ?? s.status,
-                valor: s.quantidade,
-                proporcao: s.percentual / 100,
-                extra: `${s.quantidade} (${s.percentual}%)`,
+
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[3fr_2fr]">
+          <PainelDashboard titulo="Faturamento por mês">
+            <GraficoFaturamento dados={faturamentoMensal} />
+          </PainelDashboard>
+          <PainelDashboard titulo="Taxa de conversão">
+            <GraficoConversao
+              percentual={visaoGeral?.taxaConversao?.valor ?? 0}
+              semPedidos={visaoGeral != null && visaoGeral.totalPedidos?.valor === 0}
+            />
+          </PainelDashboard>
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <PainelDashboard titulo="Top 5 produtos">
+            <ListaBarras
+              numerar
+              vazio="Nenhum produto vendido neste período."
+              itens={topProdutos.map((p) => ({
+                chave: p.nomeProduto,
+                rotulo: p.nomeProduto,
+                proporcao: p.valorTotal / maiorProduto,
+                extra: moeda(p.valorTotal),
               }))}
-          />
+            />
+          </PainelDashboard>
+          <PainelDashboard titulo="Status dos pedidos">
+            <ListaBarras
+              vazio="Nenhum pedido neste período."
+              itens={statusPedidos
+                .filter((s) => s.quantidade > 0)
+                .map((s) => ({
+                  chave: s.status,
+                  rotulo: ROTULO_STATUS[s.status] ?? s.status,
+                  proporcao: s.percentual / 100,
+                  extra: `${inteiro(s.quantidade)} (${decimal(s.percentual)}%)`,
+                }))}
+            />
+          </PainelDashboard>
         </div>
       </div>
     </AdminLayout>
-  );
-}
-
-function Cartao({ titulo, item, formato, sufixo = '', corVariacaoInvertida = false }) {
-  const valor = item?.valor;
-  const variacao = item?.variacao;
-  // Para "Pedidos Cancelados", subir é ruim: inverte a cor (verde/vermelho).
-  const subiuEhBom = !corVariacaoInvertida;
-  const corVariacao =
-    variacao == null
-      ? 'text-neutral-400'
-      : variacao >= 0 === subiuEhBom
-        ? 'text-green-600'
-        : 'text-red-600';
-
-  return (
-    <div className="rounded-lg border p-4">
-      <p className="text-xs text-neutral-500">{titulo}</p>
-      <p className="mt-1 text-xl font-semibold">
-        {valor != null ? `${formato ? formato(valor) : valor}${sufixo}` : '—'}
-      </p>
-      <p className={`mt-1 text-xs ${corVariacao}`}>
-        {variacao == null
-          ? 'sem comparação'
-          : `${variacao >= 0 ? '▲' : '▼'} ${Math.abs(variacao)}% vs período anterior`}
-      </p>
-    </div>
-  );
-}
-
-// Faturamento por Mês (ApexCharts: barras) — o mês atual sai destacado em
-// laranja, os outros 11 em cinza, igual ao protótipo do Figma.
-function GraficoFaturamento({ dados }) {
-  if (!dados.length) return <p className="text-sm text-neutral-400">Sem dados ainda.</p>;
-
-  const opcoes = {
-    chart: { toolbar: { show: false }, fontFamily: 'inherit' },
-    plotOptions: { bar: { borderRadius: 4, columnWidth: '55%', distributed: true } },
-    dataLabels: { enabled: false },
-    legend: { show: false },
-    colors: dados.map((d) => (d.mesAtual ? LARANJA : CINZA)),
-    xaxis: {
-      categories: dados.map((d) => d.rotulo),
-      labels: { style: { fontSize: '11px' } },
-      axisBorder: { show: false },
-      axisTicks: { show: false },
-    },
-    yaxis: {
-      labels: {
-        formatter: (v) => (v >= 1000 ? `${(v / 1000).toFixed(0)}k` : v),
-        style: { fontSize: '11px' },
-      },
-    },
-    grid: { borderColor: '#f1f1f1' },
-    tooltip: { y: { formatter: formatarMoeda } },
-  };
-  const series = [{ name: 'Faturamento', data: dados.map((d) => d.faturamento) }];
-
-  return <Chart options={opcoes} series={series} type="bar" height={260} />;
-}
-
-// Taxa de Conversão (ApexCharts: donut) — concluídos vs. cancelados, com o
-// percentual escrito no centro, igual ao protótipo.
-function GraficoConversao({ percentual }) {
-  const cancelados = Number((100 - percentual).toFixed(1));
-
-  const opcoes = {
-    chart: { fontFamily: 'inherit' },
-    labels: ['Concluídos', 'Cancelados'],
-    colors: [VERDE, VERMELHO],
-    dataLabels: { enabled: false },
-    legend: { position: 'bottom', fontSize: '12px', markers: { size: 6 } },
-    stroke: { width: 0 },
-    plotOptions: {
-      pie: {
-        donut: {
-          size: '72%',
-          labels: {
-            show: true,
-            value: { fontSize: '22px', fontWeight: 600, formatter: (v) => `${v}%` },
-            total: {
-              show: true,
-              label: 'Concluídos',
-              fontSize: '11px',
-              color: '#737373',
-              formatter: () => `${percentual}%`,
-            },
-          },
-        },
-      },
-    },
-    tooltip: { y: { formatter: (v) => `${v}%` } },
-  };
-  const series = [percentual, cancelados];
-
-  return <Chart options={opcoes} series={series} type="donut" height={240} />;
-}
-
-// Lista com barra de proporção — usada tanto pelo Top 5 Produtos quanto
-// pelo Status dos Pedidos, só muda o que cada barra representa.
-function ListaComBarras({ itens, vazio }) {
-  if (!itens.length) return <p className="text-sm text-neutral-400">{vazio}</p>;
-
-  return (
-    <ul className="space-y-3 text-sm">
-      {itens.map((it) => (
-        <li key={it.chave}>
-          <div className="mb-1 flex items-center justify-between">
-            <span>{it.rotulo}</span>
-            <span className="text-neutral-500">{it.extra}</span>
-          </div>
-          <div className="h-1.5 w-full rounded-full bg-neutral-100">
-            <div
-              className="h-1.5 rounded-full bg-primary"
-              style={{ width: `${Math.min(100, Math.max(0, it.proporcao * 100))}%` }}
-            />
-          </div>
-        </li>
-      ))}
-    </ul>
   );
 }
