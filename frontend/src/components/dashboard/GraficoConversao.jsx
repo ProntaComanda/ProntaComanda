@@ -1,7 +1,7 @@
 import Chart from 'react-apexcharts';
 import { EmptyState, IconTarget } from '../ui';
 import { decimal } from '../../utils/numero';
-import { COR_CANCELADOS, useCoresGrafico } from './temaGrafico';
+import { COR_DESTAQUE, useCoresGrafico } from './temaGrafico';
 
 // Taxa de conversão (rosca): itens concluídos x cancelados, com o percentual no centro.
 // `semPedidos`: sem nenhum pedido no período a rosca mostraria "100% cancelados", o que engana.
@@ -23,7 +23,8 @@ export default function GraficoConversao({ percentual, semPedidos }) {
     chart: { fontFamily: 'inherit', background: 'transparent', foreColor: cores.texto },
     theme: { mode: cores.tema },
     labels: [`Concluídos (${decimal(percentual)}%)`, `Cancelados (${decimal(cancelados)}%)`],
-    colors: [cores.concluidos, COR_CANCELADOS],
+    // mesma paleta do resto do Dashboard: laranja (concluídos) e cinza (cancelados)
+    colors: [COR_DESTAQUE, cores.cancelados],
     dataLabels: { enabled: false },
     legend: { position: 'bottom', fontSize: '12px', markers: { size: 6 }, labels: { colors: cores.texto } },
     stroke: { width: 0 },

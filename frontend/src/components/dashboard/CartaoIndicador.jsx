@@ -20,29 +20,30 @@ export function SetaVariacao({ variacao, invertido = false }) {
 }
 
 /**
- * Indicador do topo (Ganhos Totais, Total de Pedidos...). `valor` já vem formatado.
- * `extra` é uma linha opcional entre o valor e a variação (ex.: Ticket Médio).
+ * Indicador do topo (Ganhos Totais, Ticket Médio...). `valor` já vem formatado.
+ * Todos os cards têm a mesma estrutura e a mesma altura: ícone + título, valor em destaque
+ * e, por último, a variação em relação ao período anterior.
  */
-export default function CartaoIndicador({ titulo, Icone, valor, variacao, comparacao, invertido, extra, carregando }) {
+export default function CartaoIndicador({ titulo, Icone, valor, variacao, comparacao, invertido, carregando }) {
+  // valores longos (ex.: R$ 1.245.280,90) diminuem a fonte para nunca estourar o card
+  const tamanhoValor = String(valor).length > 12 ? 'text-base' : 'text-xl';
+
   return (
-    <div className="flex flex-col gap-4 rounded-lg border border-l-4 border-line border-l-primary bg-surface p-4 shadow-sm">
+    <div className="flex flex-col gap-3 rounded-lg border border-l-4 border-line border-l-primary bg-surface p-4 shadow-sm">
       <div className="flex items-center gap-3">
-        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md bg-muted text-ink">
-          <Icone className="h-6 w-6" />
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-muted text-ink">
+          <Icone className="h-5 w-5" />
         </span>
-        <div className="min-w-0">
-          <p className="truncate text-[11px] font-semibold uppercase tracking-wide text-ink-soft">{titulo}</p>
-          {carregando ? (
-            <span className="mt-1 block h-6 w-24 animate-pulse rounded bg-muted" aria-label="Carregando" />
-          ) : (
-            <p className="text-xl font-bold leading-tight tabular-nums">{valor}</p>
-          )}
-        </div>
+        <p className="text-[11px] font-semibold uppercase leading-tight tracking-wide text-ink-soft">{titulo}</p>
       </div>
 
-      {extra}
+      {carregando ? (
+        <span className="block h-7 w-28 animate-pulse rounded bg-muted" aria-label="Carregando" />
+      ) : (
+        <p className={cn('font-bold leading-none tabular-nums', tamanhoValor)}>{valor}</p>
+      )}
 
-      <p className="mt-auto flex flex-wrap items-center gap-x-1.5 text-xs">
+      <p className="mt-auto flex flex-wrap items-center gap-x-1.5 gap-y-0.5 border-t border-line pt-3 text-xs">
         {variacao == null ? (
           <span className="text-ink-faint">{carregando ? '\u00a0' : 'sem comparação'}</span>
         ) : (

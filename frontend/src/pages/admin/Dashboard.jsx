@@ -1,12 +1,20 @@
 import { useEffect, useState } from 'react';
 import AdminLayout from '../../components/layout/AdminLayout';
 import PageHeader from '../../components/layout/PageHeader';
-import CartaoIndicador, { SetaVariacao } from '../../components/dashboard/CartaoIndicador';
+import CartaoIndicador from '../../components/dashboard/CartaoIndicador';
 import GraficoConversao from '../../components/dashboard/GraficoConversao';
 import GraficoFaturamento from '../../components/dashboard/GraficoFaturamento';
 import ListaBarras from '../../components/dashboard/ListaBarras';
 import PainelDashboard from '../../components/dashboard/PainelDashboard';
-import { Button, IconBag, IconDollar, IconDownload, IconTarget, IconXSquare } from '../../components/ui';
+import {
+  Button,
+  IconBag,
+  IconDollar,
+  IconDownload,
+  IconTarget,
+  IconTicket,
+  IconXSquare,
+} from '../../components/ui';
 import api from '../../api/axiosClient';
 import { cn } from '../../lib/cn';
 import { useAuthStore } from '../../store/authStore';
@@ -157,7 +165,8 @@ export default function Dashboard() {
       )}
 
       <div className={cn('space-y-6 transition-opacity', carregandoPeriodo && visaoGeral && 'opacity-60')} aria-busy={carregandoPeriodo}>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {/* cinco indicadores, todos iguais; o Ticket Médio vem logo depois dos Ganhos */}
+        <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-5">
           <CartaoIndicador
             titulo="Ganhos totais"
             Icone={IconDollar}
@@ -165,17 +174,14 @@ export default function Dashboard() {
             variacao={visaoGeral?.ganhoTotal?.variacao}
             comparacao={periodoAtual.comparacao}
             carregando={!visaoGeral}
-            extra={
-              visaoGeral && (
-                <p className="flex items-center justify-between gap-2 border-t border-line pt-3 text-xs">
-                  <span className="text-ink-soft">Ticket médio</span>
-                  <span className="flex items-center gap-2">
-                    <span className="font-semibold tabular-nums">{moeda(ticket?.valor)}</span>
-                    <SetaVariacao variacao={ticket?.variacao} />
-                  </span>
-                </p>
-              )
-            }
+          />
+          <CartaoIndicador
+            titulo="Ticket médio"
+            Icone={IconTicket}
+            valor={moeda(ticket?.valor)}
+            variacao={ticket?.variacao}
+            comparacao={periodoAtual.comparacao}
+            carregando={!visaoGeral}
           />
           <CartaoIndicador
             titulo="Total de pedidos"

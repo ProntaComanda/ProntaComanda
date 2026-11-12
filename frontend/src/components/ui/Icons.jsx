@@ -254,3 +254,10 @@ export const IconDownload = (p) => (
     <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" />
   </svg>
 );
+
+export const IconTicket = (p) => (
+  <svg {...base} {...p}>
+    <path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2z" />
+    <path d="M13 5v2M13 11v2M13 17v2" />
+  </svg>
+);
