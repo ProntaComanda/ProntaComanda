@@ -1,17 +1,30 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import api from '../../api/axiosClient';
+import CarrinhoPedido from '../../components/garcom/CarrinhoPedido';
+import ComandaConsumo from '../../components/garcom/ComandaConsumo';
+import ObservacaoProdutoModal from '../../components/garcom/ObservacaoProdutoModal';
+import ProdutoLinha from '../../components/garcom/ProdutoLinha';
+import { Duracao } from '../../components/mesas/Cronometro';
+import { ROTULO_STATUS_MESA, TOM_STATUS_MESA } from '../../components/mesas/MesaCard';
+import {
+  Badge,
+  Button,
+  Chip,
+  ConfirmDialog,
+  EmptyState,
+  IconArrowLeft,
+  IconClock,
+  IconSearch,
+  Input,
+  Spinner,
+} from '../../components/ui';
 import { useSocket } from '../../hooks/useSocket';
-import { agruparItens } from '../../utils/agruparItens';
+import { toast } from '../../store/toastStore';
+import { mensagemErro } from '../../utils/erroApi';
+import { normalizar } from '../../utils/texto';
 
-const ROTULO_STATUS_ITEM = {
-  pendente: { texto: 'Pendente', cor: 'bg-neutral-300' },
-  em_preparo: { texto: 'Em preparo', cor: 'bg-yellow-400' },
-  pronto: { texto: 'Pronto', cor: 'bg-green-500' },
-  entregue: { texto: 'Entregue', cor: 'bg-neutral-400' },
-};
-
-const moeda = (v) => `R$ ${(v ?? 0).toFixed(2)}`;
+const pad = (valor, tamanho) => String(valor).padStart(tamanho, '0');
 
 // RF20/RF21/RF23/RF25/RF26 - Tela da mesa (mobile): cardápio, lançamento com
 // carrinho, espelho de consumo da comanda selecionada, e solicitar fechamento.
@@ -19,118 +32,136 @@ export default function Mesa() {
   const { mesaId } = useParams();
   const navigate = useNavigate();
 
-  const [mesa, setMesa] = useState(null);
+  const [mesa, setMesa] = useState(undefined); // undefined = carregando | null = não encontrada
   const [grupos, setGrupos] = useState([]); // cardápio: [{ _id, nome, produtos }]
   const [categoriaAtiva, setCategoriaAtiva] = useState('todos');
+  const [busca, setBusca] = useState('');
   const [comandas, setComandas] = useState([]);
   const [comandaSelecionadaId, setComandaSelecionadaId] = useState(null);
   const [carrinho, setCarrinho] = useState([]); // [{ chave, produto, quantidade, observacao }]
-  const [erro, setErro] = useState('');
+  const [erroCarga, setErroCarga] = useState('');
   const [enviando, setEnviando] = useState(false);
+  const [abrindoComanda, setAbrindoComanda] = useState(false);
+  const [produtoObs, setProdutoObs] = useState(null); // produto cujo modal de observação está aberto
+  const [confirmandoFechamento, setConfirmandoFechamento] = useState(false);
+  const [solicitando, setSolicitando] = useState(false);
 
   const carregarMesa = useCallback(async () => {
-    const { data } = await api.get('/mesas');
-    setMesa(data.find((m) => m._id === mesaId) ?? null);
+    try {
+      const { data } = await api.get('/mesas');
+      setMesa(data.find((m) => m._id === mesaId) ?? null);
+      setErroCarga('');
+    } catch (err) {
+      setErroCarga(mensagemErro(err, 'Não foi possível carregar a mesa.'));
+    }
   }, [mesaId]);
 
   const carregarComandas = useCallback(async () => {
-    const { data } = await api.get(`/comandas/mesa/${mesaId}`);
-    const abertas = data.filter((c) => c.status === 'aberta');
-    setComandas(abertas);
-    // mantém a seleção se ela ainda existir; senão, cai na primeira aberta
-    setComandaSelecionadaId((atual) =>
-      abertas.some((c) => c._id === atual) ? atual : (abertas[0]?._id ?? null)
-    );
+    try {
+      const { data } = await api.get(`/comandas/mesa/${mesaId}`);
+      const abertas = data.filter((c) => c.status === 'aberta');
+      setComandas(abertas);
+      // mantém a seleção se ela ainda existir; senão, cai na primeira aberta
+      setComandaSelecionadaId((atual) => (abertas.some((c) => c._id === atual) ? atual : (abertas[0]?._id ?? null)));
+    } catch (err) {
+      setErroCarga(mensagemErro(err, 'Não foi possível carregar as comandas.'));
+    }
   }, [mesaId]);
 
-  useEffect(() => {
+  const carregarCardapio = useCallback(async () => {
+    try {
+      const { data } = await api.get('/cardapio');
+      setGrupos(data);
+    } catch (err) {
+      setErroCarga(mensagemErro(err, 'Não foi possível carregar o cardápio.'));
+    }
+  }, []);
+
+  const carregarTudo = useCallback(() => {
     carregarMesa();
     carregarComandas();
-    api.get('/cardapio').then((r) => setGrupos(r.data));
-  }, [carregarMesa, carregarComandas]);
+    carregarCardapio();
+  }, [carregarMesa, carregarComandas, carregarCardapio]);
 
-  // RF22/RF23 - tempo real: disponibilidade de produto e status do KDS.
-  const socketRef = useSocket([]);
+  useEffect(() => {
+    carregarTudo();
+  }, [carregarTudo]);
+
+  // RF22/RF23 - tempo real: status da mesa, disponibilidade de produto e andamento do KDS.
+  // Entra na sala 'mapa-mesas' para saber quando o caixa fecha ou reabre esta mesa.
+  const socketRef = useSocket(['mapa-mesas']);
   useEffect(() => {
     const socket = socketRef.current;
-    if (!socket) return;
+    if (!socket) return undefined;
 
-    const aoAtualizarProduto = (produtoAtualizado) => {
+    const aoAtualizarMesa = (mesaAtualizada) => {
+      if (mesaAtualizada._id !== mesaId) return;
+      setMesa(mesaAtualizada);
+      carregarComandas();
+    };
+    const aoAtualizarProduto = (produtoAtualizado) =>
       setGrupos((atual) =>
         atual.map((g) => ({
           ...g,
-          produtos: g.produtos.map((p) =>
-            p._id === produtoAtualizado._id ? produtoAtualizado : p
-          ),
+          produtos: g.produtos.map((p) => (p._id === produtoAtualizado._id ? produtoAtualizado : p)),
         }))
       );
-    };
-    const aoAtualizarKDS = (evento) => {
-      if (comandas.some((c) => c._id === evento.comandaId)) carregarComandas();
-    };
 
+    socket.on('mesa:atualizada', aoAtualizarMesa);
     socket.on('produto:atualizado', aoAtualizarProduto);
-    socket.on('kds:status-atualizado', aoAtualizarKDS);
+    socket.on('kds:status-atualizado', carregarComandas);
+    socket.on('connect', carregarTudo); // voltou a conexão: busca o que pode ter sido perdido
     return () => {
+      socket.off('mesa:atualizada', aoAtualizarMesa);
       socket.off('produto:atualizado', aoAtualizarProduto);
-      socket.off('kds:status-atualizado', aoAtualizarKDS);
+      socket.off('kds:status-atualizado', carregarComandas);
+      socket.off('connect', carregarTudo);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [socketRef, comandas, carregarComandas]);
+  }, [socketRef, mesaId, carregarComandas, carregarTudo]);
 
   const comandaSelecionada = comandas.find((c) => c._id === comandaSelecionadaId) ?? null;
-
-  const subtotalSelecionada = useMemo(() => {
-    if (!comandaSelecionada) return 0;
-    return comandaSelecionada.itens
-      .filter((i) => !i.estornado)
-      .reduce((soma, i) => soma + i.precoUnitario * i.quantidade, 0);
-  }, [comandaSelecionada]);
+  const aguardandoFechamento = mesa?.status === 'aguardando_fechamento';
+  const mesaFechada = mesa?.status === 'livre';
 
   // ---------- comandas ----------
   const abrirNovaComanda = async () => {
+    setAbrindoComanda(true);
     try {
       const { data } = await api.post('/comandas/abrir', { mesaId });
       await carregarComandas();
       setComandaSelecionadaId(data.comanda._id);
-      setErro('');
     } catch (err) {
-      setErro(err.response?.data?.erro || 'Erro ao abrir comanda.');
+      toast.error('Não foi possível abrir a comanda', mensagemErro(err, 'Tente de novo.'));
+    } finally {
+      setAbrindoComanda(false);
     }
   };
 
   // ---------- carrinho ----------
-  const chaveCarrinho = (produtoId, observacao) => `${produtoId}::${observacao || ''}`;
-
-  const adicionarAoCarrinho = (produto, observacao = '') => {
-    const chave = chaveCarrinho(produto._id, observacao);
+  const adicionarAoCarrinho = (produto, observacao = '', quantidade = 1) => {
+    const chave = `${produto._id}::${observacao}`;
     setCarrinho((atual) => {
       const existente = atual.find((l) => l.chave === chave);
       if (existente) {
-        return atual.map((l) => (l.chave === chave ? { ...l, quantidade: l.quantidade + 1 } : l));
+        return atual.map((l) => (l.chave === chave ? { ...l, quantidade: l.quantidade + quantidade } : l));
       }
-      return [...atual, { chave, produto, quantidade: 1, observacao }];
+      return [...atual, { chave, produto, quantidade, observacao }];
     });
   };
 
-  const alterarQuantidade = (chave, delta) => {
-    setCarrinho(
-      (atual) =>
-        atual
-          .map((l) => (l.chave === chave ? { ...l, quantidade: l.quantidade + delta } : l))
-          .filter((l) => l.quantidade > 0) // chegou a 0: remove a linha
-    );
-  };
-
-  const removerDoCarrinho = (chave) =>
-    setCarrinho((atual) => atual.filter((l) => l.chave !== chave));
-
-  const totalCarrinho = carrinho.reduce((n, l) => n + l.quantidade, 0);
+  const alterarQuantidade = (chave, delta) =>
+    setCarrinho((atual) =>
+      atual
+        .map((l) => (l.chave === chave ? { ...l, quantidade: l.quantidade + delta } : l))
+        .filter((l) => l.quantidade > 0)
+    ); // chegou a 0: remove a linha
 
   const enviarCarrinho = async () => {
     if (!comandaSelecionada || !carrinho.length) return;
+    const totalLinhas = carrinho.length;
+    const totalItens = carrinho.reduce((n, l) => n + l.quantidade, 0);
+    let enviadas = 0;
     setEnviando(true);
-    setErro('');
     try {
       for (const linha of carrinho) {
         // eslint-disable-next-line no-await-in-loop -- precisa manter a ordem do pedido
@@ -139,309 +170,275 @@ export default function Mesa() {
           quantidade: linha.quantidade,
           observacao: linha.observacao || undefined,
         });
+        enviadas += 1;
+        // Cada linha sai do carrinho assim que o servidor aceita: se a próxima falhar,
+        // tentar de novo não lança em dobro o que já foi.
+        setCarrinho((atual) => atual.filter((l) => l.chave !== linha.chave));
       }
-      setCarrinho([]);
-      await carregarComandas();
+      toast.success(
+        'Pedido enviado',
+        `Comanda #${pad(comandaSelecionada.numero, 3)} · ${totalItens} ${totalItens === 1 ? 'item' : 'itens'}`
+      );
     } catch (err) {
-      setErro(
-        err.response?.data?.erro || 'Erro ao enviar o pedido. Confira o carrinho e tente de novo.'
+      toast.error(
+        enviadas > 0 ? `Só ${enviadas} de ${totalLinhas} itens foram enviados` : 'Não foi possível enviar o pedido',
+        mensagemErro(err, 'Confira o pedido e tente de novo.')
       );
     } finally {
       setEnviando(false);
+      carregarComandas();
     }
   };
 
   // ---------- fechamento ----------
   const solicitarFechamento = async () => {
-    if (!window.confirm('Solicitar o fechamento desta mesa? O caixa será avisado.')) return;
+    setSolicitando(true);
     try {
       await api.patch(`/mesas/${mesaId}/solicitar-fechamento`);
+      toast.success('Fechamento solicitado', `Mesa ${pad(mesa.numero, 2)} · o caixa foi avisado`);
       navigate('/funcionarios');
     } catch (err) {
-      setErro(err.response?.data?.erro || 'Erro ao solicitar fechamento.');
+      toast.error('Não foi possível solicitar o fechamento', mensagemErro(err, 'Tente de novo.'));
+      setSolicitando(false);
+      setConfirmandoFechamento(false);
     }
   };
 
-  const mesaAguardandoFechamento = mesa?.status === 'aguardando_fechamento';
+  // ---------- cardápio ----------
+  const noPedido = useMemo(() => {
+    const porProduto = {};
+    carrinho.forEach((l) => {
+      porProduto[l.produto._id] = (porProduto[l.produto._id] ?? 0) + l.quantidade;
+    });
+    return porProduto;
+  }, [carrinho]);
 
-  const produtosExibidos =
+  const termo = normalizar(busca).trim();
+  const produtosExibidos = (
     categoriaAtiva === 'todos'
       ? grupos.flatMap((g) => g.produtos)
-      : (grupos.find((g) => g._id === categoriaAtiva)?.produtos ?? []);
+      : (grupos.find((g) => g._id === categoriaAtiva)?.produtos ?? [])
+  ).filter((p) => !termo || normalizar(p.nome).includes(termo));
+
+  const podeLancar = Boolean(comandaSelecionada) && !aguardandoFechamento;
+
+  // ---------- tela ----------
+  if (mesa === undefined) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-canvas text-ink-soft">
+        {erroCarga ? (
+          <div className="text-center">
+            <p className="mb-3 text-sm text-danger-ink">{erroCarga}</p>
+            <Button variant="secondary" size="sm" onClick={carregarTudo}>
+              Tentar de novo
+            </Button>
+          </div>
+        ) : (
+          <Spinner className="h-6 w-6" label="Carregando mesa" />
+        )}
+      </div>
+    );
+  }
+
+  if (mesa === null) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-canvas text-ink">
+        <EmptyState
+          title="Mesa não encontrada"
+          description="Ela pode ter sido removida. Volte ao mapa e escolha outra."
+          action={
+            <Button variant="strong" onClick={() => navigate('/funcionarios')}>
+              Voltar ao mapa de mesas
+            </Button>
+          }
+        />
+      </div>
+    );
+  }
 
   // celular: tela cheia. No computador: coluna centralizada (largura máxima).
   return (
-    <div className="mx-auto min-h-screen w-full max-w-3xl pb-32 md:border-x">
-      <header className="sticky top-0 z-10 border-b bg-white p-3">
-        <div className="flex items-center justify-between">
-          <button onClick={() => navigate('/funcionarios')} className="text-sm text-neutral-500">
-            ← Mapa de mesas
+    <div className="min-h-screen bg-canvas text-ink">
+      <header className="sticky top-0 z-10 border-b border-line bg-surface/95 backdrop-blur">
+        <div className="mx-auto flex max-w-3xl items-center gap-3 px-3 py-3">
+          <button
+            type="button"
+            onClick={() => navigate('/funcionarios')}
+            aria-label="Voltar para o mapa de mesas"
+            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-ink-soft transition hover:bg-muted hover:text-ink"
+          >
+            <IconArrowLeft className="h-5 w-5" />
           </button>
-          <p className="text-lg font-bold">Mesa {String(mesa?.numero ?? '').padStart(2, '0')}</p>
+          <div className="min-w-0 flex-1">
+            <p className="font-display text-xl uppercase leading-none">Mesa {pad(mesa.numero, 2)}</p>
+            <Badge tone={TOM_STATUS_MESA[mesa.status]} className="mt-1.5">
+              {ROTULO_STATUS_MESA[mesa.status]}
+            </Badge>
+          </div>
+          {mesa.status !== 'livre' && mesa.abertaEm && (
+            <span className="inline-flex shrink-0 items-center gap-1.5 text-xs text-ink-soft">
+              <IconClock className="h-4 w-4" />
+              <Duracao desde={mesa.abertaEm} />
+            </span>
+          )}
         </div>
       </header>
 
-      {erro && <p className="m-3 rounded bg-red-50 p-2 text-sm text-red-600">{erro}</p>}
-
-      {mesaAguardandoFechamento && (
-        <p className="m-3 rounded bg-yellow-50 p-2 text-sm text-yellow-700">
-          Esta mesa está aguardando o fechamento pelo caixa. Novos pedidos ficam bloqueados até lá.
-        </p>
-      )}
-
-      {/* RF25/RF23 - seleção de comanda; "+ Nova" nunca deixa a mesa sem
-          destino pro carrinho, mesmo que todas as comandas tenham sido
-          fechadas por engano enquanto o garçom estava na tela. */}
-      <div className="flex items-center gap-2 overflow-x-auto p-3">
-        {comandas.map((c) => (
-          <button
-            key={c._id}
-            onClick={() => setComandaSelecionadaId(c._id)}
-            className={`shrink-0 rounded-full px-3 py-1.5 text-sm ${
-              c._id === comandaSelecionadaId ? 'bg-primary text-white' : 'border text-neutral-600'
-            }`}
+      <main className={`mx-auto max-w-3xl space-y-4 px-3 py-4 ${carrinho.length > 0 ? 'pb-[55vh]' : 'pb-28'}`}>
+        {erroCarga && (
+          <div
+            role="alert"
+            className="flex items-center justify-between gap-3 rounded-md bg-danger-soft px-4 py-2 text-sm text-danger-ink"
           >
-            Comanda #{c.numero}
-          </button>
-        ))}
-        {!mesaAguardandoFechamento && (
-          <button
-            onClick={abrirNovaComanda}
-            className="shrink-0 rounded-full border border-dashed px-3 py-1.5 text-sm text-neutral-600"
-          >
-            + Nova comanda
-          </button>
+            <span>{erroCarga}</span>
+            <Button variant="secondary" size="sm" onClick={carregarTudo}>
+              Tentar de novo
+            </Button>
+          </div>
         )}
-      </div>
 
-      {/* RF23 - espelho de consumo: itens já lançados, com status colorido */}
-      {comandaSelecionada && (
-        <div className="mx-3 mb-3 rounded-lg border p-3">
-          <p className="mb-2 text-sm font-semibold text-neutral-600">
-            Comanda #{comandaSelecionada.numero}
+        {aguardandoFechamento && (
+          <p className="rounded-md bg-warn-soft px-4 py-3 text-sm text-warn-ink">
+            Esta mesa está aguardando o fechamento pelo caixa. Novos pedidos ficam bloqueados até lá.
           </p>
-          <ul className="space-y-1.5 text-sm">
-            {/* itens iguais (mesmo produto/observação/status) aparecem empilhados: 2x Hamburguer */}
-            {agruparItens(comandaSelecionada.itens, (i) =>
-              i.estornado ? 'estornado' : i.statusKDS
-            ).map((item) => (
-              <li key={item.chave} className="flex items-center justify-between">
-                <span className={item.estornado ? 'text-neutral-400 line-through' : ''}>
-                  {item.quantidade}x {item.nomeProduto}
-                  {item.observacao && (
-                    <span className="text-neutral-400"> ({item.observacao})</span>
-                  )}
-                </span>
-                {item.estornado ? (
-                  <span className="text-xs text-red-500">Estornado</span>
-                ) : (
-                  <span className="flex items-center gap-1.5 text-xs text-neutral-500">
-                    <span
-                      className={`h-2 w-2 rounded-full ${ROTULO_STATUS_ITEM[item.statusKDS]?.cor}`}
-                    />
-                    {ROTULO_STATUS_ITEM[item.statusKDS]?.texto ?? item.statusKDS}
-                  </span>
-                )}
-              </li>
+        )}
+        {mesaFechada && (
+          <p className="rounded-md bg-muted px-4 py-3 text-sm text-ink-soft">
+            Esta mesa foi fechada. Volte ao mapa para abrir outra.
+          </p>
+        )}
+
+        {/* RF25/RF23 - seleção de comanda; "+ Nova" nunca deixa a mesa sem destino para o
+            carrinho, mesmo que todas as comandas tenham sido fechadas enquanto o garçom
+            estava na tela. */}
+        {!mesaFechada && (
+          <div className="-mx-3 flex items-center gap-2 overflow-x-auto px-3 pb-1">
+            {comandas.map((c) => (
+              <Chip
+                key={c._id}
+                className="shrink-0"
+                active={c._id === comandaSelecionadaId}
+                onClick={() => setComandaSelecionadaId(c._id)}
+              >
+                Comanda #{pad(c.numero, 3)}
+              </Chip>
             ))}
-            {!comandaSelecionada.itens.length && (
-              <li className="text-neutral-400">Nenhum item lançado ainda.</li>
+            {!aguardandoFechamento && (
+              <button
+                type="button"
+                onClick={abrirNovaComanda}
+                disabled={abrindoComanda}
+                className="inline-flex h-9 shrink-0 items-center rounded-full border border-dashed border-line px-4 text-sm font-medium text-ink-soft transition hover:border-primary hover:text-primary disabled:opacity-50"
+              >
+                {abrindoComanda ? 'Abrindo...' : '+ Nova comanda'}
+              </button>
             )}
-          </ul>
-          <p className="mt-2 border-t pt-2 text-right text-sm font-semibold">
-            Subtotal: {moeda(subtotalSelecionada)}
-          </p>
-        </div>
-      )}
-
-      {!comandas.length && (
-        <p className="mx-3 mb-3 rounded-lg border border-dashed p-4 text-center text-sm text-neutral-400">
-          Nenhuma comanda aberta nesta mesa. Toque em "+ Nova comanda" para começar.
-        </p>
-      )}
-
-      {/* cardápio */}
-      <div className="flex gap-2 overflow-x-auto px-3 pb-2">
-        <button
-          onClick={() => setCategoriaAtiva('todos')}
-          className={`shrink-0 rounded-full px-3 py-1 text-sm ${
-            categoriaAtiva === 'todos' ? 'bg-primary text-white' : 'border text-neutral-600'
-          }`}
-        >
-          Todos
-        </button>
-        {grupos.map((g) => (
-          <button
-            key={g._id}
-            onClick={() => setCategoriaAtiva(g._id)}
-            className={`shrink-0 rounded-full px-3 py-1 text-sm ${
-              categoriaAtiva === g._id ? 'bg-primary text-white' : 'border text-neutral-600'
-            }`}
-          >
-            {g.nome}
-          </button>
-        ))}
-      </div>
-
-      <div className="grid grid-cols-2 gap-3 p-3 md:grid-cols-3">
-        {produtosExibidos.map((produto) => (
-          <CartaoProdutoGarcom
-            key={produto._id}
-            produto={produto}
-            desabilitado={!comandaSelecionada || mesaAguardandoFechamento}
-            onAdicionar={(observacao) => adicionarAoCarrinho(produto, observacao)}
-          />
-        ))}
-        {!produtosExibidos.length && (
-          <p className="col-span-2 py-6 text-center text-sm text-neutral-400">
-            Nenhum produto nesta categoria.
-          </p>
+          </div>
         )}
-      </div>
 
-      {/* RF20 - carrinho fixo embaixo, sempre à mão no celular */}
-      {carrinho.length > 0 && (
-        <div className="fixed bottom-0 left-1/2 max-h-[55vh] w-full max-w-3xl -translate-x-1/2 overflow-y-auto border-t bg-white p-3 shadow-lg md:border-x">
-          <p className="mb-2 text-sm font-semibold">
-            Pedido para a comanda #{comandaSelecionada?.numero} ({totalCarrinho}{' '}
-            {totalCarrinho === 1 ? 'item' : 'itens'})
-          </p>
-          <ul className="space-y-2">
-            {carrinho.map((linha) => (
-              <li key={linha.chave} className="flex items-center gap-2 text-sm">
-                <div className="flex-1">
-                  <p>{linha.produto.nome}</p>
-                  {linha.observacao && (
-                    <p className="text-xs text-neutral-400">{linha.observacao}</p>
-                  )}
-                </div>
-                <button
-                  onClick={() => alterarQuantidade(linha.chave, -1)}
-                  className="h-7 w-7 rounded border text-neutral-600"
-                >
-                  −
-                </button>
-                <span className="w-5 text-center">{linha.quantidade}</span>
-                <button
-                  onClick={() => alterarQuantidade(linha.chave, 1)}
-                  className="h-7 w-7 rounded border text-neutral-600"
-                >
-                  +
-                </button>
-                <button
-                  onClick={() => removerDoCarrinho(linha.chave)}
-                  className="ml-1 text-red-500"
-                  aria-label="Remover"
-                >
-                  ✕
-                </button>
-              </li>
+        {/* RF23 - espelho de consumo: itens já lançados, com a etapa de cada um */}
+        {comandaSelecionada ? (
+          <ComandaConsumo comanda={comandaSelecionada} />
+        ) : (
+          !mesaFechada && (
+            <p className="rounded-lg border border-dashed border-line p-4 text-center text-sm text-ink-faint">
+              Nenhuma comanda aberta nesta mesa. Toque em “+ Nova comanda” para começar.
+            </p>
+          )
+        )}
+
+        {/* cardápio */}
+        <section aria-label="Cardápio" className="space-y-3">
+          <Input
+            type="search"
+            leftIcon={<IconSearch className="h-4 w-4" />}
+            value={busca}
+            onChange={(e) => setBusca(e.target.value)}
+            placeholder="Buscar no cardápio"
+            aria-label="Buscar no cardápio"
+          />
+
+          <div className="-mx-3 flex gap-2 overflow-x-auto px-3 pb-1">
+            <Chip className="shrink-0" active={categoriaAtiva === 'todos'} onClick={() => setCategoriaAtiva('todos')}>
+              Todos
+            </Chip>
+            {grupos.map((g) => (
+              <Chip
+                key={g._id}
+                className="shrink-0"
+                active={categoriaAtiva === g._id}
+                onClick={() => setCategoriaAtiva(g._id)}
+              >
+                {g.nome}
+              </Chip>
             ))}
-          </ul>
-          <button
-            onClick={enviarCarrinho}
-            disabled={enviando}
-            className="mt-3 w-full rounded-md bg-primary py-2.5 text-center font-medium text-white disabled:opacity-50"
-          >
-            {enviando ? 'Enviando...' : 'Enviar pedido'}
-          </button>
-        </div>
+          </div>
+
+          {produtosExibidos.length === 0 ? (
+            <p className="py-6 text-center text-sm text-ink-faint">
+              {termo ? 'Nenhum produto encontrado.' : 'Nenhum produto nesta categoria.'}
+            </p>
+          ) : (
+            <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              {produtosExibidos.map((produto) => (
+                <ProdutoLinha
+                  key={produto._id}
+                  produto={produto}
+                  noPedido={noPedido[produto._id] ?? 0}
+                  desabilitado={!podeLancar}
+                  onAdicionar={() => adicionarAoCarrinho(produto)}
+                  onObservacao={() => setProdutoObs(produto)}
+                />
+              ))}
+            </ul>
+          )}
+        </section>
+      </main>
+
+      {/* RF20 - pedido em montagem fixo embaixo, sempre à mão no celular */}
+      {carrinho.length > 0 && comandaSelecionada && (
+        <CarrinhoPedido
+          linhas={carrinho}
+          numeroComanda={comandaSelecionada.numero}
+          enviando={enviando}
+          onAlterar={alterarQuantidade}
+          onEnviar={enviarCarrinho}
+        />
       )}
 
-      {!carrinho.length && comandaSelecionada && !mesaAguardandoFechamento && (
-        <div className="fixed bottom-0 left-1/2 w-full max-w-3xl -translate-x-1/2 border-t bg-white p-3 md:border-x">
+      {carrinho.length === 0 && podeLancar && (
+        <div className="fixed inset-x-0 bottom-0 z-20 mx-auto w-full max-w-3xl border-t border-line bg-surface px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 md:border-x">
           <button
-            onClick={solicitarFechamento}
-            className="w-full rounded-md border border-red-200 py-2.5 text-center text-sm font-medium text-red-600"
+            type="button"
+            onClick={() => setConfirmandoFechamento(true)}
+            className="h-11 w-full rounded-md border border-danger text-sm font-semibold text-danger-ink transition hover:bg-danger-soft"
           >
             Solicitar fechamento da mesa
           </button>
         </div>
       )}
-    </div>
-  );
-}
 
-// RF20/RF21 - card do produto com "+1" rápido e sugestões de observação com
-// um toque (RF21); busca as sugestões só na primeira vez que o garçom pede
-// pra ver, pra não disparar uma chamada por produto visível na tela toda.
-function CartaoProdutoGarcom({ produto, desabilitado, onAdicionar }) {
-  const [mostrarObs, setMostrarObs] = useState(false);
-  const [sugestoes, setSugestoes] = useState(null);
-  const indisponivel = produto.disponivel === false;
-
-  const abrirSugestoes = async () => {
-    setMostrarObs((v) => !v);
-    if (sugestoes === null) {
-      try {
-        const { data } = await api.get(`/comandas/produtos/${produto._id}/sugestoes`);
-        setSugestoes(data);
-      } catch {
-        setSugestoes([]);
-      }
-    }
-  };
-
-  const observacaoLivre = () => {
-    const texto = window.prompt('Observação (opcional):');
-    if (texto === null) return;
-    onAdicionar(texto.trim());
-    setMostrarObs(false);
-  };
-
-  return (
-    <div className={`rounded-lg border p-3 ${indisponivel ? 'opacity-50' : ''}`}>
-      <p className="text-sm font-medium">{produto.nome}</p>
-      <p className="text-sm font-semibold">{moeda(produto.preco)}</p>
-
-      {indisponivel ? (
-        <p className="mt-2 text-xs text-neutral-400">Indisponível</p>
-      ) : (
-        <>
-          <div className="mt-2 flex gap-1.5">
-            <button
-              onClick={() => onAdicionar('')}
-              disabled={desabilitado}
-              className="flex-1 rounded-md bg-primary py-1.5 text-xs font-medium text-white disabled:opacity-40"
-            >
-              + Adicionar
-            </button>
-            <button
-              onClick={abrirSugestoes}
-              disabled={desabilitado}
-              className="rounded-md border px-2 text-xs text-neutral-600 disabled:opacity-40"
-            >
-              Obs.
-            </button>
-          </div>
-
-          {mostrarObs && (
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              {sugestoes === null && (
-                <span className="text-xs text-neutral-400">Carregando...</span>
-              )}
-              {sugestoes?.map((texto) => (
-                <button
-                  key={texto}
-                  onClick={() => {
-                    onAdicionar(texto);
-                    setMostrarObs(false);
-                  }}
-                  className="rounded-full border px-2 py-1 text-xs text-neutral-600"
-                >
-                  {texto}
-                </button>
-              ))}
-              <button
-                onClick={observacaoLivre}
-                className="rounded-full border px-2 py-1 text-xs text-primary"
-              >
-                Outra...
-              </button>
-            </div>
-          )}
-        </>
+      {produtoObs && (
+        <ObservacaoProdutoModal
+          produto={produtoObs}
+          onFechar={() => setProdutoObs(null)}
+          onAdicionar={({ quantidade, observacao }) => {
+            adicionarAoCarrinho(produtoObs, observacao, quantidade);
+            setProdutoObs(null);
+          }}
+        />
       )}
+
+      <ConfirmDialog
+        open={confirmandoFechamento}
+        title="Solicitar o fechamento?"
+        message="O caixa será avisado e esta mesa não aceita novos pedidos até o fechamento."
+        confirmLabel="Solicitar fechamento"
+        tone="primary"
+        loading={solicitando}
+        onConfirm={solicitarFechamento}
+        onCancel={() => setConfirmandoFechamento(false)}
+      />
     </div>
   );
 }

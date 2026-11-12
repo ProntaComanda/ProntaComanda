@@ -9,6 +9,8 @@ const BORDA = {
   aguardando_fechamento: 'border-b-kds-preparo',
 };
 
+export const TOM_STATUS_MESA = { livre: 'neutral', ocupada: 'ok', aguardando_fechamento: 'warning' };
+
 export const ROTULO_STATUS_MESA = {
   livre: 'Livre',
   ocupada: 'Aberta',
