@@ -1,4 +1,5 @@
 // Regras do KDS (RF05/RF06) separadas da tela, para ficarem fáceis de testar.
+import { normalizar } from './texto';
 
 const LIMITE_PADRAO_MIN = 20; // sem tempo de preparo cadastrado nos itens
 const ALERTA_PADRAO_MIN = 10;
@@ -25,12 +26,6 @@ export function situacaoPedido(pedido, agora) {
     emAlerta: minutos > alerta,
   };
 }
-
-const normalizar = (texto) =>
-  String(texto ?? '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase();
 
 // Busca por número da comanda ("#001", "1"), mesa ("08", "mesa 8"), item ou observação.
 export function pedidoCombinaComBusca(pedido, busca) {

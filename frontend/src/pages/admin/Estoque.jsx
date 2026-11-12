@@ -1,269 +1,331 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import AdminLayout from '../../components/layout/AdminLayout';
+import PageHeader from '../../components/layout/PageHeader';
+import HistoricoInsumoModal from '../../components/estoque/HistoricoInsumoModal';
+import InsumoFormModal from '../../components/estoque/InsumoFormModal';
+import MovimentarEstoqueModal from '../../components/estoque/MovimentarEstoqueModal';
+import {
+  Badge,
+  Button,
+  Chip,
+  ConfirmDialog,
+  EmptyState,
+  IconBox,
+  IconMinus,
+  IconPlus,
+  IconSearch,
+  Input,
+  Menu,
+  Spinner,
+} from '../../components/ui';
 import api from '../../api/axiosClient';
+import { cn } from '../../lib/cn';
+import { toast } from '../../store/toastStore';
+import { formatarQuantidade, situacaoInsumo } from '../../utils/estoque';
+import { mensagemErro } from '../../utils/erroApi';
+import { normalizar } from '../../utils/texto';
 
-const UNIDADES = ['un', 'kg', 'g', 'l', 'ml'];
+const FILTROS = [
+  { chave: 'todos', rotulo: 'Todos' },
+  { chave: 'zerado', rotulo: 'Zerados' },
+  { chave: 'baixo', rotulo: 'Abaixo do mínimo' },
+  { chave: 'ok', rotulo: 'Em dia' },
+];
 
-// Aceita "5" e "5,5" (o jeito natural de digitar no Brasil).
-const lerNumero = (texto) => Number(String(texto).trim().replace(',', '.'));
+const TITULO_MOVIMENTO = { entrada: 'Entrada registrada', saida: 'Saída registrada', ajuste: 'Ajuste registrado' };
 
 // RF10 - Gestão e Entrada de Estoque
+// RF22 - alerta visual: vermelho = zerado, amarelo = abaixo do mínimo
 export default function Estoque() {
   const [insumos, setInsumos] = useState([]);
-  const [mostrarInativos, setMostrarInativos] = useState(false);
+  const [mostrarRemovidos, setMostrarRemovidos] = useState(false);
+  const [carregando, setCarregando] = useState(true);
   const [erroLista, setErroLista] = useState('');
+  const [filtro, setFiltro] = useState('todos');
+  const [busca, setBusca] = useState('');
+
+  // null = fechado | {} = novo | insumo = editando
+  const [formInsumo, setFormInsumo] = useState(null);
+  const [movimento, setMovimento] = useState(null); // { insumo, tipo }
+  const [historico, setHistorico] = useState(null); // insumo
+  const [aRemover, setARemover] = useState(null);
+  const [removendo, setRemovendo] = useState(false);
 
   const carregar = useCallback(async () => {
     try {
-      const { data } = await api.get('/estoque', {
-        params: { ativo: mostrarInativos ? 'todos' : 'true' },
-      });
+      const { data } = await api.get('/estoque', { params: { ativo: mostrarRemovidos ? 'todos' : 'true' } });
       setInsumos(data);
       setErroLista('');
     } catch (err) {
-      setErroLista(err.response?.data?.erro || 'Não foi possível carregar o estoque.');
+      setErroLista(mensagemErro(err, 'Não foi possível carregar o estoque.'));
+    } finally {
+      setCarregando(false);
     }
-  }, [mostrarInativos]);
+  }, [mostrarRemovidos]);
 
   useEffect(() => {
     carregar();
   }, [carregar]);
 
-  // ---------- cadastrar ----------
-  const cadastrarInsumo = async () => {
-    const nome = window.prompt('Nome do insumo:');
-    if (!nome?.trim()) return;
+  const comSituacao = useMemo(() => insumos.map((insumo) => ({ insumo, situacao: situacaoInsumo(insumo) })), [insumos]);
 
-    const unidade = window.prompt(`Unidade (${UNIDADES.join(', ')}):`, 'un');
-    if (unidade === null) return;
-    if (!UNIDADES.includes(unidade.trim())) {
-      window.alert(`Unidade inválida. Use uma de: ${UNIDADES.join(', ')}.`);
-      return;
-    }
+  // contadores só dos insumos ativos: o que foi removido não conta como alerta
+  const contagens = useMemo(() => {
+    const total = { todos: 0, zerado: 0, baixo: 0, ok: 0 };
+    comSituacao.forEach(({ situacao }) => {
+      if (situacao === 'removido') return;
+      total.todos += 1;
+      total[situacao] += 1;
+    });
+    return total;
+  }, [comSituacao]);
 
-    const saldoStr = window.prompt('Saldo inicial:', '0');
-    if (saldoStr === null) return;
-    const saldoAtual = lerNumero(saldoStr);
-    if (Number.isNaN(saldoAtual) || saldoAtual < 0) {
-      window.alert('Saldo inválido.');
-      return;
-    }
+  const termo = normalizar(busca).trim();
+  const visiveis = comSituacao.filter(({ insumo, situacao }) => {
+    if (termo && !normalizar(insumo.nome).includes(termo)) return false;
+    if (situacao === 'removido') return filtro === 'todos'; // removidos só aparecem em "Todos"
+    return filtro === 'todos' || filtro === situacao;
+  });
 
-    const minimoStr = window.prompt('Saldo mínimo (dispara alerta abaixo dele):', '0');
-    if (minimoStr === null) return;
-    const saldoMinimo = lerNumero(minimoStr);
-    if (Number.isNaN(saldoMinimo) || saldoMinimo < 0) {
-      window.alert('Saldo mínimo inválido.');
-      return;
-    }
-
+  const remover = async () => {
+    const insumo = aRemover;
+    setRemovendo(true);
     try {
-      await api.post('/estoque', {
-        nome: nome.trim(),
-        unidade: unidade.trim(),
-        saldoAtual,
-        saldoMinimo,
-      });
+      await api.delete(`/estoque/${insumo._id}`);
+      toast.success('Insumo removido', insumo.nome);
       carregar();
     } catch (err) {
-      window.alert(err.response?.data?.erro || 'Erro ao cadastrar insumo.');
+      toast.error('Não foi possível remover o insumo', mensagemErro(err, 'Tente de novo.'));
+    } finally {
+      setRemovendo(false);
+      setARemover(null);
     }
   };
 
-  const editarInsumo = async (i) => {
-    const nome = window.prompt('Nome do insumo:', i.nome);
-    if (nome === null) return;
-    if (!nome.trim()) {
-      window.alert('O nome não pode ficar vazio.');
-      return;
-    }
-
-    const minimoStr = window.prompt('Saldo mínimo:', String(i.saldoMinimo ?? 0));
-    if (minimoStr === null) return;
-    const saldoMinimo = lerNumero(minimoStr);
-    if (Number.isNaN(saldoMinimo) || saldoMinimo < 0) {
-      window.alert('Saldo mínimo inválido.');
-      return;
-    }
-
+  const reativar = async (insumo) => {
     try {
-      await api.put(`/estoque/${i._id}`, { nome: nome.trim(), saldoMinimo });
+      await api.patch(`/estoque/${insumo._id}/reativar`);
+      toast.success('Insumo reativado', insumo.nome);
       carregar();
     } catch (err) {
-      window.alert(err.response?.data?.erro || 'Erro ao editar insumo.');
-    }
-  };
-
-  // RNF11 - inativa em vez de apagar; o histórico de movimentações é mantido.
-  const removerInsumo = async (i) => {
-    if (!window.confirm(`Remover "${i.nome}" do estoque?`)) return;
-    try {
-      await api.delete(`/estoque/${i._id}`);
-      carregar();
-    } catch (err) {
-      window.alert(err.response?.data?.erro || 'Erro ao remover insumo.');
-    }
-  };
-
-  const reativarInsumo = async (i) => {
-    try {
-      await api.patch(`/estoque/${i._id}/reativar`);
-      carregar();
-    } catch (err) {
-      window.alert(err.response?.data?.erro || 'Erro ao reativar insumo.');
-    }
-  };
-
-  // ---------- movimentar ----------
-  const movimentar = async (i, tipo) => {
-    const rotulos = { entrada: 'Entrada', saida: 'Saída', ajuste: 'Ajuste' };
-    const quantidadeStr = window.prompt(
-      `${rotulos[tipo]} de ${i.nome} — quantidade (${i.unidade}):`
-    );
-    if (quantidadeStr === null) return;
-    const quantidade = lerNumero(quantidadeStr);
-    if (Number.isNaN(quantidade) || quantidade <= 0) {
-      window.alert('Quantidade inválida.');
-      return;
-    }
-
-    let motivo;
-    if (tipo === 'ajuste') {
-      motivo = window.prompt('Motivo do ajuste (obrigatório):');
-      if (motivo === null) return;
-      if (!motivo.trim() || motivo.trim().length < 3) {
-        window.alert('Informe um motivo com ao menos 3 caracteres.');
-        return;
-      }
-    }
-
-    try {
-      await api.post(`/estoque/${i._id}/movimentar`, { tipo, quantidade, motivo: motivo?.trim() });
-      carregar();
-    } catch (err) {
-      window.alert(err.response?.data?.erro || 'Erro ao movimentar estoque.');
+      toast.error('Não foi possível reativar o insumo', mensagemErro(err, 'Tente de novo.'));
     }
   };
 
   return (
     <AdminLayout>
-      <div className="mb-4 flex items-center justify-between">
-        <div>
-          <h1 className="text-lg font-semibold">Estoque</h1>
-          <p className="text-sm text-neutral-500">
-            Controle o saldo de insumos e registre entradas, saídas e ajustes
-          </p>
+      <PageHeader
+        titulo="Estoque"
+        descricao="Controle o saldo de insumos e registre entradas, saídas e ajustes"
+        acoes={
+          <Button leftIcon={<IconPlus className="h-4 w-4" />} onClick={() => setFormInsumo({})}>
+            Adicionar insumo
+          </Button>
+        }
+      />
+
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div role="group" aria-label="Filtrar insumos" className="flex flex-wrap items-center gap-2">
+          {FILTROS.map(({ chave, rotulo }) => (
+            <Chip key={chave} active={filtro === chave} count={contagens[chave]} onClick={() => setFiltro(chave)}>
+              {rotulo}
+            </Chip>
+          ))}
         </div>
-        <button
-          onClick={cadastrarInsumo}
-          className="rounded-md bg-primary px-4 py-2 text-sm text-white"
-        >
-          + Adicionar insumo
-        </button>
+
+        <div className="flex flex-wrap items-center gap-4">
+          <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-ink-soft">
+            <input
+              type="checkbox"
+              checked={mostrarRemovidos}
+              onChange={(e) => setMostrarRemovidos(e.target.checked)}
+              className="h-4 w-4 accent-[#f36115]"
+            />
+            Mostrar removidos
+          </label>
+          <Input
+            className="sm:w-64"
+            leftIcon={<IconSearch className="h-4 w-4" />}
+            value={busca}
+            onChange={(e) => setBusca(e.target.value)}
+            placeholder="Buscar insumo..."
+            aria-label="Buscar insumo pelo nome"
+          />
+        </div>
       </div>
 
-      <label className="mb-3 flex items-center gap-2 text-sm text-neutral-600">
-        <input
-          type="checkbox"
-          checked={mostrarInativos}
-          onChange={(e) => setMostrarInativos(e.target.checked)}
+      {carregando ? (
+        <p className="flex items-center gap-2 text-sm text-ink-soft">
+          <Spinner label="Carregando" /> Carregando estoque...
+        </p>
+      ) : erroLista ? (
+        <EmptyState
+          title="Não foi possível carregar"
+          description={erroLista}
+          action={
+            <Button variant="strong" onClick={carregar}>
+              Tentar de novo
+            </Button>
+          }
         />
-        Mostrar removidos
-      </label>
-
-      {erroLista && <p className="mb-3 text-sm text-red-600">{erroLista}</p>}
-
-      <table className="w-full text-left text-sm">
-        <thead className="border-b text-neutral-500">
-          <tr>
-            <th className="py-2">Insumo</th>
-            <th>Saldo atual</th>
-            <th>Saldo mínimo</th>
-            <th>Opções</th>
-          </tr>
-        </thead>
-        <tbody>
-          {insumos.map((i) => {
-            // RF22 - mesmo alerta visual (cor) usado no resto do sistema:
-            // vermelho zerado, amarelo abaixo do mínimo, verde OK.
-            const zerado = i.saldoAtual === 0;
-            const abaixoDoMinimo = !zerado && i.saldoAtual < (i.saldoMinimo ?? 0);
-
-            return (
-              <tr key={i._id} className={`border-b ${i.ativo ? '' : 'text-neutral-400'}`}>
-                <td className="py-2">
-                  {i.nome}
-                  {!i.ativo && (
-                    <span className="ml-2 rounded bg-neutral-200 px-1.5 py-0.5 text-xs">
-                      removido
-                    </span>
-                  )}
-                </td>
-                <td>
-                  <span
-                    className={
-                      zerado
-                        ? 'font-semibold text-red-600'
-                        : abaixoDoMinimo
-                          ? 'font-semibold text-yellow-600'
-                          : ''
-                    }
-                  >
-                    {i.saldoAtual} {i.unidade}
-                  </span>
-                </td>
-                <td>
-                  {i.saldoMinimo} {i.unidade}
-                </td>
-                <td className="space-x-2 py-2">
-                  {i.ativo ? (
-                    <>
-                      <button
-                        onClick={() => movimentar(i, 'entrada')}
-                        className="rounded border px-2 py-1"
-                      >
-                        Entrada
-                      </button>
-                      <button
-                        onClick={() => movimentar(i, 'saida')}
-                        className="rounded border px-2 py-1"
-                      >
-                        Saída
-                      </button>
-                      <button
-                        onClick={() => movimentar(i, 'ajuste')}
-                        className="rounded border px-2 py-1"
-                      >
-                        Ajuste
-                      </button>
-                      <button onClick={() => editarInsumo(i)} className="rounded border px-2 py-1">
-                        Editar
-                      </button>
-                      <button
-                        onClick={() => removerInsumo(i)}
-                        className="rounded bg-neutral-900 px-2 py-1 text-white"
-                      >
-                        Remover
-                      </button>
-                    </>
-                  ) : (
-                    <button onClick={() => reativarInsumo(i)} className="rounded border px-2 py-1">
-                      Reativar
-                    </button>
-                  )}
-                </td>
+      ) : insumos.length === 0 ? (
+        <EmptyState
+          icon={<IconBox className="h-10 w-10" />}
+          title="Nenhum insumo cadastrado"
+          description="Cadastre os ingredientes e materiais para acompanhar o saldo e receber alertas de reposição."
+          action={
+            <Button variant="strong" onClick={() => setFormInsumo({})}>
+              Adicionar insumo
+            </Button>
+          }
+        />
+      ) : visiveis.length === 0 ? (
+        <EmptyState
+          icon={<IconSearch className="h-10 w-10" />}
+          title="Nenhum insumo encontrado"
+          description="Tente outro filtro ou outra busca."
+        />
+      ) : (
+        // overflow visível no desktop: o menu "⋮" da última linha não pode ser cortado
+        <div className="overflow-x-auto rounded-lg border border-line bg-surface lg:overflow-visible">
+          <table className="w-full min-w-[40rem] text-left text-sm">
+            <caption className="sr-only">Insumos em estoque</caption>
+            <thead className="bg-tile text-xs font-semibold uppercase tracking-wide text-ink-soft [&_th:first-child]:rounded-tl-lg [&_th:last-child]:rounded-tr-lg">
+              <tr>
+                <th scope="col" className="px-4 py-3">Insumo</th>
+                <th scope="col" className="px-4 py-3">Saldo atual</th>
+                <th scope="col" className="px-4 py-3">Saldo mínimo</th>
+                <th scope="col" className="px-4 py-3 text-right">Opções</th>
               </tr>
+            </thead>
+            <tbody className="divide-y divide-line">
+              {visiveis.map(({ insumo, situacao }) => {
+                const removido = situacao === 'removido';
+                return (
+                  <tr key={insumo._id} className="transition hover:bg-muted">
+                    <td className={cn('px-4 py-3 font-semibold', removido && 'text-ink-faint')}>
+                      {insumo.nome}
+                      {removido && (
+                        <Badge tone="neutral" dot={false} className="ml-2 align-middle">
+                          Removido
+                        </Badge>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      <span
+                        className={cn(
+                          'font-semibold tabular-nums',
+                          situacao === 'zerado' && 'text-danger-ink',
+                          situacao === 'baixo' && 'text-warn-ink',
+                          removido && 'font-normal text-ink-faint'
+                        )}
+                      >
+                        {formatarQuantidade(insumo.saldoAtual)} {insumo.unidade}
+                      </span>
+                      {situacao === 'zerado' && (
+                        <Badge tone="danger" className="ml-2 align-middle">
+                          Zerado
+                        </Badge>
+                      )}
+                      {situacao === 'baixo' && (
+                        <Badge tone="warning" className="ml-2 align-middle">
+                          Abaixo do mínimo
+                        </Badge>
+                      )}
+                    </td>
+                    <td className={cn('px-4 py-3 tabular-nums', removido ? 'text-ink-faint' : 'text-ink-soft')}>
+                      {insumo.saldoMinimo > 0 ? `${formatarQuantidade(insumo.saldoMinimo)} ${insumo.unidade}` : '—'}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center justify-end gap-2">
+                        {removido ? (
+                          <>
+                            <Button variant="secondary" size="sm" onClick={() => reativar(insumo)}>
+                              Reativar
+                            </Button>
+                            <Menu
+                              rotulo={`Mais ações de ${insumo.nome}`}
+                              itens={[{ texto: 'Ver histórico', onClick: () => setHistorico(insumo) }]}
+                            />
+                          </>
+                        ) : (
+                          <>
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              leftIcon={<IconPlus className="h-3.5 w-3.5" />}
+                              onClick={() => setMovimento({ insumo, tipo: 'entrada' })}
+                            >
+                              Entrada
+                            </Button>
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              leftIcon={<IconMinus className="h-3.5 w-3.5" />}
+                              onClick={() => setMovimento({ insumo, tipo: 'saida' })}
+                            >
+                              Saída
+                            </Button>
+                            <Menu
+                              rotulo={`Mais ações de ${insumo.nome}`}
+                              itens={[
+                                { texto: 'Ajuste de saldo', onClick: () => setMovimento({ insumo, tipo: 'ajuste' }) },
+                                { texto: 'Ver histórico', onClick: () => setHistorico(insumo) },
+                                { texto: 'Editar insumo', onClick: () => setFormInsumo(insumo) },
+                                { texto: 'Remover insumo', perigo: true, onClick: () => setARemover(insumo) },
+                              ]}
+                            />
+                          </>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {formInsumo && (
+        <InsumoFormModal
+          insumo={formInsumo}
+          onFechar={() => setFormInsumo(null)}
+          onSalvo={(nome) => {
+            toast.success(formInsumo._id ? 'Insumo atualizado' : 'Insumo adicionado', nome);
+            setFormInsumo(null);
+            carregar();
+          }}
+        />
+      )}
+
+      {movimento && (
+        <MovimentarEstoqueModal
+          insumo={movimento.insumo}
+          tipo={movimento.tipo}
+          onFechar={() => setMovimento(null)}
+          onSalvo={(atualizado) => {
+            toast.success(
+              TITULO_MOVIMENTO[movimento.tipo],
+              `${atualizado.nome} · saldo: ${formatarQuantidade(atualizado.saldoAtual)} ${atualizado.unidade}`
             );
-          })}
-          {!insumos.length && !erroLista && (
-            <tr>
-              <td colSpan={4} className="py-6 text-center text-neutral-500">
-                Nenhum insumo cadastrado ainda.
-              </td>
-            </tr>
-          )}
-        </tbody>
-      </table>
+            setMovimento(null);
+            carregar();
+          }}
+        />
+      )}
+
+      {historico && <HistoricoInsumoModal insumo={historico} onFechar={() => setHistorico(null)} />}
+
+      <ConfirmDialog
+        open={Boolean(aRemover)}
+        title={`Remover ${aRemover?.nome ?? ''}?`}
+        message="O insumo sai da lista, mas o histórico de movimentações é mantido. Você pode reativá-lo depois em “Mostrar removidos”."
+        confirmLabel="Remover insumo"
+        loading={removendo}
+        onConfirm={remover}
+        onCancel={() => setARemover(null)}
+      />
     </AdminLayout>
   );
 }
