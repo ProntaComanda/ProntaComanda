@@ -101,7 +101,7 @@ export default function CardapioPublico() {
     <div className="flex min-h-screen flex-col bg-canvas-warm text-ink">
       <header className="sticky top-0 z-10 border-b border-line bg-muted dark:bg-surface">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
-          <Logo showName className="h-8 text-ink" />
+          <Logo showName className="h-9 text-ink" />
           <div className="flex items-center gap-2">
             <ThemeToggle />
             {/* RF01 - acesso de funcionário fica aqui, discreto, sem ocupar
