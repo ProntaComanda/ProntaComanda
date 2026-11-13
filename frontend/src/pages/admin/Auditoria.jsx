@@ -77,9 +77,10 @@ export default function Auditoria() {
         descricao="Registro das ações sensíveis feitas no sistema: estornos, descontos, reaberturas, ajustes de estoque e mudanças de equipe e de preços"
       />
 
+      {/* sm:w-*: o campo já tem w-full; sem o prefixo a largura não pega. No celular os campos empilham. */}
       <div className="mb-4 flex flex-wrap items-end gap-3 rounded-lg border border-line bg-surface p-4">
         <Select
-          className="w-52"
+          className="sm:w-52"
           label="Ação"
           value={filtros.tipo}
           onChange={(e) => alterarFiltro('tipo', e.target.value)}
@@ -93,7 +94,7 @@ export default function Auditoria() {
         </Select>
 
         <Select
-          className="w-52"
+          className="sm:w-52"
           label="Funcionário"
           value={filtros.funcionario}
           onChange={(e) => alterarFiltro('funcionario', e.target.value)}
@@ -108,7 +109,7 @@ export default function Auditoria() {
 
         {/* min/max impedem escolher uma data inicial depois da final (o backend recusaria) */}
         <Input
-          className="w-40"
+          className="sm:w-40"
           type="date"
           label="De"
           value={filtros.de}
@@ -116,7 +117,7 @@ export default function Auditoria() {
           onChange={(e) => alterarFiltro('de', e.target.value)}
         />
         <Input
-          className="w-40"
+          className="sm:w-40"
           type="date"
           label="Até"
           value={filtros.ate}
