@@ -50,7 +50,7 @@ export default function Login() {
       {/* Painel de marca (só em telas médias para cima) */}
       <div className="hidden items-center justify-center bg-login-gradient p-12 text-white md:flex">
         <div>
-          <Logo vertical gradiente="laranja" className="h-48 text-white" />
+          <Logo vertical simboloEsquerda gradiente="laranja" className="h-52 text-white" />
           <p className="mt-5 text-sm text-white/70">Sistema de Gestão para Restaurantes</p>
           <ul className="mt-8 space-y-2 text-sm text-white/85">
             {DESTAQUES.map((texto) => (

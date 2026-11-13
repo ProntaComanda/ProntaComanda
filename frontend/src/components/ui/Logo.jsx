@@ -5,8 +5,8 @@ import { LOGO } from './logoPaths';
 // Gradiente do "Comanda", com as cores medidas nos arquivos oficiais de logo:
 //  - laranja: logo para fundo claro
 //  - azul: logo para fundo escuro
-// Para a logo escura usar o laranja também, basta trocar `escuro` por 'laranja' abaixo.
-const GRADIENTES = { laranja: ['#FF5A00', '#FF2827'] };
+// Hoje as duas usam o laranja. Para voltar ao azul na logo escura, troque `escuro` por 'azul' abaixo.
+const GRADIENTES = { laranja: ['#FF5A00', '#FF2827'], azul: ['#00A5FF', '#00D6D8'] };
 const GRADIENTE_DO_TEMA = { claro: 'laranja', escuro: 'laranja' };
 
 const { simbolo, texto } = LOGO;
@@ -14,6 +14,8 @@ const { simbolo, texto } = LOGO;
 // Três formas de montar o desenho (medidas no mesmo sistema de coordenadas dos caminhos):
 const ESCALA_NOME = 2; // lado a lado: o nome tem 2x o tamanho que teria na logo original
 const ESPACO_LADO_A_LADO = 520;
+// logo empilhada: um pouco mais de ar entre o símbolo e o nome do que no arquivo original
+const ESPACO_EMPILHADA = 440;
 const LAYOUTS = {
   // só o símbolo (cloche)
   simbolo: { largura: simbolo.largura, altura: simbolo.altura, simbolo: { x: 0, y: 0 }, nome: null },
@@ -31,9 +33,9 @@ const LAYOUTS = {
   // símbolo em cima, nome embaixo (a logo oficial; telas de entrada)
   vertical: {
     largura: texto.largura,
-    altura: simbolo.altura + LOGO.espaco + texto.altura,
+    altura: simbolo.altura + ESPACO_EMPILHADA + texto.altura,
     simbolo: { x: LOGO.deslocamentoSimbolo, y: 0 },
-    nome: { x: 0, y: simbolo.altura + LOGO.espaco, escala: 1 },
+    nome: { x: 0, y: simbolo.altura + ESPACO_EMPILHADA, escala: 1 },
   },
 };
 
@@ -44,14 +46,17 @@ const LAYOUTS = {
  *
  * - showName: símbolo + nome lado a lado
  * - vertical: símbolo sobre o nome (logo oficial)
+ * - simboloEsquerda: só na logo empilhada, alinha o símbolo à esquerda (em vez de centralizado)
  * - gradiente (cor do "Comanda"): 'auto' segue o tema (laranja no claro, azul no escuro),
  *   'laranja' ou 'azul' fixam a cor, 'mono' usa a mesma cor do resto da logo.
  */
-export function Logo({ className, showName = false, vertical = false, gradiente = 'auto' }) {
+export function Logo({ className, showName = false, vertical = false, gradiente = 'auto', simboloEsquerda = false }) {
   // id único por logo: um gradiente declarado dentro de um SVG escondido não vale para outro
   const id = useId().replace(/:/g, '');
   const layout = LAYOUTS[vertical ? 'vertical' : showName ? 'horizontal' : 'simbolo'];
   const comNome = layout.nome !== null;
+  // na logo empilhada o símbolo fica centralizado; `simboloEsquerda` alinha ele com o começo do nome
+  const xSimbolo = vertical && simboloEsquerda ? 0 : layout.simbolo.x;
 
   return (
     <span className={cn('inline-flex items-center', className)}>
@@ -81,7 +86,7 @@ export function Logo({ className, showName = false, vertical = false, gradiente 
         )}
 
         <path
-          transform={`translate(${layout.simbolo.x} ${layout.simbolo.y})`}
+          transform={`translate(${xSimbolo} ${layout.simbolo.y})`}
           d={simbolo.d}
           fill="currentColor"
           fillRule="evenodd"
