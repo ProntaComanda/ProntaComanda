@@ -17,9 +17,10 @@ import {
   ThemeToggle,
 } from '../ui';
 import { cn } from '../../lib/cn';
+import CabecalhoGarcom from '../garcom/CabecalhoGarcom';
 
 /**
- * Sidebar do Admin/Caixa, como no design: uma barra fina de ícones sempre visível
+ * Sidebar do Admin, como no design: uma barra fina de ícones sempre visível
  * (menu, tema, sair) e, quando aberta, o painel com logo, navegação e usuário.
  * Fechada, os ícones de navegação passam para a barra fina. RNF08 - telas largas.
  *
@@ -68,17 +69,41 @@ export default function AdminLayout({ children, painel, sidebarFechada = false }
   const abertaSalva = useSidebarStore((s) => s.aberta);
   const alternar = useSidebarStore((s) => s.alternar);
   const fechar = useSidebarStore((s) => s.fechar);
+  const itensVisiveis = ITENS_MENU.filter((item) => item.perfis.includes(funcionario?.perfil));
+  // Com um destino só (hoje, o Caixa: só Mesas/Comandas) o menu não tem função. Esses perfis
+  // seguem o padrão do garçom e da cozinha: sem barra lateral, só a barra de topo.
+  // Não mexe na preferência salva da sidebar: ela só vale para quem tem 2 ou mais destinos.
+  const semMenu = itensVisiveis.length <= 1;
   // `&& !sidebarFechada` evita o menu aparecer aberto por um instante antes do efeito abaixo fechar
   const aberta = abertaSalva && !sidebarFechada;
 
   useEffect(() => {
     if (sidebarFechada) fechar();
   }, [sidebarFechada, fechar]);
-  const itensVisiveis = ITENS_MENU.filter((item) => item.perfis.includes(funcionario?.perfil));
 
   // Ao limpar a sessão, a RotaProtegida redireciona para /login. Se a chamada
   // falhar, a store já limpou a sessão (finally): nada a tratar aqui.
   const sair = () => logout().catch(() => {});
+
+  if (semMenu) {
+    // Tela fixa na altura do navegador: a página não rola. A barra de topo e o painel lateral
+    // ficam parados e só o conteúdo (main) rola, se precisar.
+    // `--topo`: altura da barra de topo (4rem). As telas que ocupam a altura toda subtraem
+    // isso do cálculo (ver MesasComandas); no layout com sidebar a variável nem existe.
+    return (
+      <div className="flex h-screen flex-col overflow-hidden bg-canvas text-ink" style={{ '--topo': '4rem' }}>
+        <CabecalhoGarcom esticado />
+        <div className="flex min-h-0 flex-1">
+          <main className="min-w-0 flex-1 overflow-y-auto p-8">{children}</main>
+          {painel && (
+            <aside className="flex w-[22.5rem] shrink-0 flex-col overflow-hidden border-l border-line bg-surface">
+              {painel}
+            </aside>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-h-screen bg-canvas text-ink">

@@ -151,7 +151,7 @@ export default function MesasComandas() {
 
   return (
     <AdminLayout painel={painel}>
-      <div className="flex min-h-[calc(100vh-4rem)] flex-col">
+      <div className="flex min-h-[calc(100vh-4rem-var(--topo,0rem))] flex-col">
         <PageHeader
           titulo="Mesas e Comandas"
           descricao="Acompanhe suas mesas e gerencie os pedidos em atendimento"
