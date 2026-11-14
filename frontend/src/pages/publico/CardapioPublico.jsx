@@ -4,7 +4,7 @@ import api from '../../api/axiosClient';
 import PainelPedido from '../../components/publico/PainelPedido';
 import CartaoProduto from '../../components/publico/CartaoProduto';
 import ProdutoDetalhe from '../../components/publico/ProdutoDetalhe';
-import { Button, Chip, EmptyState, IconSearch, Input, Logo, Spinner, ThemeToggle } from '../../components/ui';
+import { Button, Chip, EmptyState, IconLogin, IconSearch, Input, Logo, Spinner, ThemeToggle } from '../../components/ui';
 import { toast } from '../../store/toastStore';
 
 const TODOS = 'todos';
@@ -108,9 +108,11 @@ export default function CardapioPublico() {
                 o espaço principal da tela, que é do cliente */}
             <Link
               to="/login"
-              className="inline-flex h-8 items-center rounded-md bg-tile px-3 text-xs font-semibold text-ink transition hover:brightness-95 dark:hover:brightness-125"
+              aria-label="Entrar (acesso de funcionários)"
+              title="Acesso de funcionários"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-md text-ink-soft transition hover:bg-muted hover:text-ink"
             >
-              Entrar
+              <IconLogin />
             </Link>
           </div>
         </div>

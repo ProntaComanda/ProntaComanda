@@ -261,3 +261,10 @@ export const IconTicket = (p) => (
     <path d="M13 5v2M13 11v2M13 17v2" />
   </svg>
 );
+
+export const IconLogin = (p) => (
+  <svg {...base} {...p}>
+    <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" />
+    <path d="m10 17 5-5-5-5M15 12H3" />
+  </svg>
+);
