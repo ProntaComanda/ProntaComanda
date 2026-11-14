@@ -27,7 +27,12 @@ const movimentacaoEstoqueSchema = new Schema(
   {
     insumo: { type: Schema.Types.ObjectId, ref: 'Insumo', required: true },
     tipo: { type: String, enum: ['entrada', 'saida', 'ajuste'], required: true },
+    // entrada/saída: a quantidade movimentada. ajuste: a diferença (para mais ou para menos);
+    // o sentido está em saldoAnterior -> saldoPosterior.
     quantidade: { type: Number, required: true },
+    // saldo antes e depois (registros antigos não têm: o histórico trata como opcional)
+    saldoAnterior: { type: Number },
+    saldoPosterior: { type: Number },
     motivo: { type: String, trim: true }, // obrigatório em ajustes manuais
     responsavel: { type: Schema.Types.ObjectId, ref: 'Funcionario', required: true },
   },

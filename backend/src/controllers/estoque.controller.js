@@ -2,6 +2,7 @@ const asyncHandler = require('../utils/asyncHandler');
 const AppError = require('../utils/AppError');
 const escaparRegex = require('../utils/escaparRegex');
 const logger = require('../utils/logger');
+const { calcularMovimentacao } = require('../utils/quantidade');
 const { Insumo, MovimentacaoEstoque, Produto, LogAuditoria } = require('../models');
 
 /**
@@ -88,24 +89,34 @@ const reativarInsumo = asyncHandler(async (req, res) => {
   res.json(await Insumo.findByIdAndUpdate(alvo._id, { ativo: true }, { new: true }));
 });
 
-// POST /estoque/:id/movimentar  { tipo, quantidade, motivo? }
+// POST /estoque/:id/movimentar
+//   entrada/saída: { tipo, quantidade, motivo? }
+//   ajuste:        { tipo: 'ajuste', saldoContado, motivo }  (o saldo passa a ser o contado)
 const movimentar = asyncHandler(async (req, res) => {
-  const { tipo, quantidade, motivo } = req.body;
+  const { tipo, motivo } = req.body;
 
   const insumo = await buscarOu404(req.params.id);
   if (!insumo.ativo) throw new AppError('Este insumo está inativo.', 409);
 
-  const delta = tipo === 'saida' ? -quantidade : quantidade;
-  const saldoAnterior = insumo.saldoAtual;
+  // Todo saldo é arredondado (3 casas) para não sobrar resto de ponto flutuante.
+  // Saída maior que o estoque nunca deixa o saldo negativo: ele para em 0.
+  const { saldoAnterior, novoSaldo, quantidadeRegistrada } = calcularMovimentacao(
+    req.body,
+    insumo.saldoAtual
+  );
+  if (tipo === 'ajuste' && novoSaldo === saldoAnterior) {
+    throw new AppError('O saldo contado é igual ao saldo atual: não há o que ajustar.', 400);
+  }
 
-  // Nunca deixa o saldo ir a negativo (ex.: dar saída maior que o estoque).
-  insumo.saldoAtual = Math.max(0, saldoAnterior + delta);
+  insumo.saldoAtual = novoSaldo;
   await insumo.save();
 
   await MovimentacaoEstoque.create({
     insumo: insumo._id,
     tipo,
-    quantidade,
+    quantidade: quantidadeRegistrada,
+    saldoAnterior,
+    saldoPosterior: novoSaldo,
     motivo,
     responsavel: req.funcionario._id,
   });
@@ -113,7 +124,7 @@ const movimentar = asyncHandler(async (req, res) => {
   if (tipo === 'ajuste') {
     await auditar(req, 'ajuste_estoque', insumo, {
       de: saldoAnterior,
-      para: insumo.saldoAtual,
+      para: novoSaldo,
       motivo,
     });
   }
@@ -121,8 +132,8 @@ const movimentar = asyncHandler(async (req, res) => {
   // RF22 - zerou o insumo => desativa os produtos que dependem dele, em
   // todos os dispositivos simultaneamente. Volta a ficar disponível quando
   // o saldo sai de 0 de novo (reposição), sem exigir ação manual no produto.
-  if (saldoAnterior !== insumo.saldoAtual && (saldoAnterior === 0) !== (insumo.saldoAtual === 0)) {
-    const disponivel = insumo.saldoAtual > 0;
+  if (saldoAnterior !== novoSaldo && (saldoAnterior === 0) !== (novoSaldo === 0)) {
+    const disponivel = novoSaldo > 0;
     const produtosAfetados = await Produto.find({
       'insumosNecessarios.insumo': insumo._id,
       ativo: true,

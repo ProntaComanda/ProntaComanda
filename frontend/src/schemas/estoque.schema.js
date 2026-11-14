@@ -21,6 +21,7 @@ const numero = (rotulo, { positivo = false } = {}) =>
       if (!Number.isFinite(n)) return problema('Digite um número (ex.: 5 ou 5,5).');
       if (positivo ? n <= 0 : n < 0) return problema(positivo ? 'Deve ser maior que zero.' : 'Não pode ser negativo.');
       if (n > 999999) return problema('Valor muito alto (máximo de 999.999).');
+      if (Math.abs(n * 1000 - Math.round(n * 1000)) > 1e-6) return problema('Use no máximo 3 casas decimais.');
       return undefined;
     });
 
@@ -45,10 +46,13 @@ export const insumoSchema = (modo) =>
     saldoMinimo: numero('o saldo mínimo'),
   });
 
-// Entrada e saída: observação opcional. Ajuste: o motivo é obrigatório (vai para a auditoria).
+// Entrada e saída: `quantidade` > 0 e observação opcional.
+// Ajuste: o campo `quantidade` guarda o SALDO CONTADO (pode ser 0) e o motivo é obrigatório
+// (vai para a auditoria). A tela manda como `saldoContado` para o backend.
 export const movimentacaoSchema = (tipo) =>
   z.object({
-    quantidade: numero('a quantidade', { positivo: true }),
+    quantidade:
+      tipo === 'ajuste' ? numero('o saldo contado') : numero('a quantidade', { positivo: true }),
     motivo:
       tipo === 'ajuste'
         ? z

@@ -52,6 +52,10 @@ export default function HistoricoInsumoModal({ insumo, onFechar }) {
         <ul className="max-h-96 divide-y divide-line overflow-y-auto pr-1">
           {movimentacoes.map((m) => {
             const tipo = TIPOS[m.tipo];
+            // Ajuste novo guarda a diferença e o saldo antes/depois: o sinal vem do sentido real.
+            // Registro antigo (sem saldos) só somava, então segue com "+".
+            const temSaldos = typeof m.saldoAnterior === 'number' && typeof m.saldoPosterior === 'number';
+            const sinal = m.tipo === 'ajuste' && temSaldos && m.saldoPosterior < m.saldoAnterior ? '\u2212' : tipo.sinal;
             return (
               <li key={m._id} className="flex items-start justify-between gap-4 py-3">
                 <div className="min-w-0">
@@ -62,9 +66,14 @@ export default function HistoricoInsumoModal({ insumo, onFechar }) {
                   <p className="text-xs text-ink-soft">
                     {m.responsavel?.nome ?? 'Funcionário removido'} · {dataHora(m.createdAt)}
                   </p>
+                  {temSaldos && (
+                    <p className="text-xs tabular-nums text-ink-faint">
+                      Saldo: {formatarQuantidade(m.saldoAnterior)} → {formatarQuantidade(m.saldoPosterior)} {insumo.unidade}
+                    </p>
+                  )}
                 </div>
                 <p className="shrink-0 font-semibold tabular-nums">
-                  {tipo.sinal}
+                  {sinal}
                   {formatarQuantidade(m.quantidade)} {insumo.unidade}
                 </p>
               </li>

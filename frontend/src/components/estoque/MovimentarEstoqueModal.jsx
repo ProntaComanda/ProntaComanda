@@ -3,7 +3,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import api from '../../api/axiosClient';
 import { movimentacaoSchema } from '../../schemas/estoque.schema';
 import { Button, Input, Modal, Textarea } from '../ui';
-import { formatarQuantidade, saldoDepois } from '../../utils/estoque';
+import { arredondar, formatarQuantidade, saldoDepois } from '../../utils/estoque';
 import { lerNumero } from '../../utils/numero';
 
 const CONFIG = {
@@ -21,15 +21,18 @@ const CONFIG = {
   },
   ajuste: {
     titulo: 'Ajuste de saldo',
-    descricao: 'Correção de inventário. A quantidade é somada ao saldo; para diminuir, use Saída.',
+    descricao:
+      'Correção de inventário: informe o saldo que você contou. O sistema ajusta a diferença, para mais ou para menos, e guarda o motivo.',
     botao: 'Registrar ajuste',
+    campo: 'Saldo contado',
     motivo: { label: 'Motivo do ajuste', placeholder: 'Ex.: Contagem do inventário' },
   },
 };
 
 /**
  * RF10 - Entrada, saída ou ajuste de um insumo (`tipo`). Mostra o saldo que vai ficar antes de
- * confirmar, igual ao cálculo do backend. Monte só quando for abrir.
+ * confirmar, igual ao cálculo do backend. Entrada e saída informam a quantidade; o ajuste informa
+ * o saldo contado. Monte só quando for abrir.
  * `onSalvo(insumoAtualizado)` é chamado depois de registrar.
  */
 export default function MovimentarEstoqueModal({ insumo, tipo, onFechar, onSalvo }) {
@@ -46,22 +49,29 @@ export default function MovimentarEstoqueModal({ insumo, tipo, onFechar, onSalvo
     defaultValues: { quantidade: '', motivo: '' },
   });
 
-  const quantidade = lerNumero(watch('quantidade'));
-  const quantidadeValida = Number.isFinite(quantidade) && quantidade > 0 && quantidade <= 999999;
-  const depois = quantidadeValida ? saldoDepois(tipo, insumo.saldoAtual, quantidade) : null;
+  // saldo com resto de conta antiga (5e-17) conta como zero, igual ao backend
+  const saldoAtual = arredondar(insumo.saldoAtual);
+  // no ajuste o campo é o saldo contado, e contar zero é válido
+  const valor = lerNumero(watch('quantidade'));
+  const valorValido = Number.isFinite(valor) && (tipo === 'ajuste' ? valor >= 0 : valor > 0) && valor <= 999999;
+  const depois = valorValido ? saldoDepois(tipo, saldoAtual, valor) : null;
+  const diferenca = tipo === 'ajuste' && depois !== null ? arredondar(depois - saldoAtual) : null;
 
   const onSubmit = async (dados) => {
     try {
-      const { data } = await api.post(`/estoque/${insumo._id}/movimentar`, {
-        tipo,
-        quantidade: lerNumero(dados.quantidade),
-        motivo: dados.motivo || undefined,
-      });
+      const corpo =
+        tipo === 'ajuste'
+          ? { tipo, saldoContado: lerNumero(dados.quantidade), motivo: dados.motivo }
+          : { tipo, quantidade: lerNumero(dados.quantidade), motivo: dados.motivo || undefined };
+      const { data } = await api.post(`/estoque/${insumo._id}/movimentar`, corpo);
       onSalvo(data);
     } catch (err) {
       const resp = err.response?.data;
       if (resp?.detalhes) {
-        Object.entries(resp.detalhes).forEach(([campo, msgs]) => setError(campo, { message: msgs[0] }));
+        // no ajuste, o campo "saldoContado" do backend é o campo "quantidade" do formulário
+        Object.entries(resp.detalhes).forEach(([campo, msgs]) =>
+          setError(campo === 'saldoContado' ? 'quantidade' : campo, { message: msgs[0] })
+        );
       } else {
         setError('root', { message: resp?.erro || 'Não foi possível registrar a movimentação. Tente de novo.' });
       }
@@ -71,16 +81,19 @@ export default function MovimentarEstoqueModal({ insumo, tipo, onFechar, onSalvo
   // Avisos sobre o efeito da movimentação (RF22: saldo zerado tira os produtos do cardápio)
   const avisos = [];
   if (depois !== null) {
-    if (tipo === 'saida' && quantidade > insumo.saldoAtual) {
+    if (tipo === 'saida' && valor > saldoAtual) {
       avisos.push({ tom: 'warn', texto: 'A saída é maior que o saldo atual; o saldo ficará em 0.' });
     }
-    if (depois === 0 && insumo.saldoAtual > 0) {
+    if (diferenca === 0) {
+      avisos.push({ tom: 'warn', texto: 'O saldo contado é igual ao saldo atual: não há o que ajustar.' });
+    }
+    if (depois === 0 && saldoAtual > 0) {
       avisos.push({
         tom: 'warn',
         texto: 'Com o saldo zerado, os produtos que usam este insumo ficam indisponíveis no cardápio.',
       });
     }
-    if (insumo.saldoAtual === 0 && depois > 0) {
+    if (saldoAtual === 0 && depois > 0) {
       avisos.push({
         tom: 'ok',
         texto: 'Com a reposição, os produtos que usam este insumo voltam a ficar disponíveis.',
@@ -111,7 +124,7 @@ export default function MovimentarEstoqueModal({ insumo, tipo, onFechar, onSalvo
 
         <Input
           data-autofocus
-          label={`Quantidade (${insumo.unidade})`}
+          label={`${config.campo ?? 'Quantidade'} (${insumo.unidade})`}
           inputMode="decimal"
           placeholder="0"
           error={errors.quantidade?.message}
@@ -131,7 +144,7 @@ export default function MovimentarEstoqueModal({ insumo, tipo, onFechar, onSalvo
           <div className="flex items-baseline justify-between">
             <span className="text-ink-soft">Saldo atual</span>
             <span className="tabular-nums">
-              {formatarQuantidade(insumo.saldoAtual)} {insumo.unidade}
+              {formatarQuantidade(saldoAtual)} {insumo.unidade}
             </span>
           </div>
           <div className="mt-1 flex items-baseline justify-between font-semibold">
@@ -140,6 +153,17 @@ export default function MovimentarEstoqueModal({ insumo, tipo, onFechar, onSalvo
               {depois === null ? '—' : `${formatarQuantidade(depois)} ${insumo.unidade}`}
             </span>
           </div>
+          {diferenca !== null && diferenca !== 0 && (
+            <div
+              className={`mt-1 flex items-baseline justify-between text-xs ${diferenca > 0 ? 'text-ok-ink' : 'text-danger-ink'}`}
+            >
+              <span>Diferença</span>
+              <span className="tabular-nums">
+                {diferenca > 0 ? '+' : '\u2212'}
+                {formatarQuantidade(Math.abs(diferenca))} {insumo.unidade}
+              </span>
+            </div>
+          )}
         </div>
 
         {avisos.map((aviso) => (
