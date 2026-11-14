@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { NavLink } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
 import { useSidebarStore } from '../../store/sidebarStore';
@@ -56,11 +57,23 @@ function Avatar({ nome }) {
 
 // `painel` (opcional): coluna fixa à direita, na altura da tela, como o painel "MESA 00" do
 // design. O conteúdo decide o próprio scroll (cabeçalho e rodapé fixos, miolo rolando).
-export default function AdminLayout({ children, painel }) {
+//
+// `sidebarFechada` (opcional): ao entrar na tela, fecha o menu lateral e bloqueia o botão que
+// abre (ele continua à vista, só desabilitado). Usado no KDS (Cozinha e Bar), para a equipe
+// da cozinha ter o máximo de área útil. O fechamento vale como uma escolha do usuário: ao ir
+// para outra tela o menu continua fechado (não "reabre sozinho") e ele abre se quiser.
+export default function AdminLayout({ children, painel, sidebarFechada = false }) {
   const funcionario = useAuthStore((s) => s.funcionario);
   const logout = useAuthStore((s) => s.logout);
-  const aberta = useSidebarStore((s) => s.aberta);
+  const abertaSalva = useSidebarStore((s) => s.aberta);
   const alternar = useSidebarStore((s) => s.alternar);
+  const fechar = useSidebarStore((s) => s.fechar);
+  // `&& !sidebarFechada` evita o menu aparecer aberto por um instante antes do efeito abaixo fechar
+  const aberta = abertaSalva && !sidebarFechada;
+
+  useEffect(() => {
+    if (sidebarFechada) fechar();
+  }, [sidebarFechada, fechar]);
   const itensVisiveis = ITENS_MENU.filter((item) => item.perfis.includes(funcionario?.perfil));
 
   // Ao limpar a sessão, a RotaProtegida redireciona para /login. Se a chamada
@@ -75,10 +88,12 @@ export default function AdminLayout({ children, painel }) {
           <button
             type="button"
             onClick={alternar}
-            aria-label={aberta ? 'Recolher menu' : 'Abrir menu'}
+            disabled={sidebarFechada}
+            aria-label={sidebarFechada ? 'Menu bloqueado nesta tela' : aberta ? 'Recolher menu' : 'Abrir menu'}
+            title={sidebarFechada ? 'Menu bloqueado nesta tela' : undefined}
             aria-expanded={aberta}
             aria-controls="menu-lateral"
-            className="inline-flex h-10 w-10 items-center justify-center rounded-md bg-tile text-ink-soft transition hover:text-ink dark:bg-muted"
+            className="inline-flex h-10 w-10 items-center justify-center rounded-md bg-tile text-ink-soft transition hover:text-ink disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:text-ink-soft dark:bg-muted"
           >
             <IconMenu />
           </button>

@@ -19,7 +19,8 @@ export default function Cozinha() {
   const [ajuda, setAjuda] = useState(false);
 
   return (
-    <AdminLayout>
+    // sidebarFechada: no KDS o menu fica sempre recolhido (mais área útil para a cozinha)
+    <AdminLayout sidebarFechada>
       <PageHeader
         titulo={setor === 'bar' ? 'Bar' : 'Cozinha'}
         descricao="Acompanhe e organize os pedidos em preparo em tempo real"
