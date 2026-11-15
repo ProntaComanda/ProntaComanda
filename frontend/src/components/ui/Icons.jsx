@@ -268,3 +268,19 @@ export const IconLogin = (p) => (
     <path d="m10 17 5-5-5-5M15 12H3" />
   </svg>
 );
+
+export const IconGrid = (p) => (
+  <svg {...base} {...p}>
+    <rect width="7" height="7" x="3" y="3" rx="1" />
+    <rect width="7" height="7" x="14" y="3" rx="1" />
+    <rect width="7" height="7" x="14" y="14" rx="1" />
+    <rect width="7" height="7" x="3" y="14" rx="1" />
+  </svg>
+);
+
+export const IconMartini = (p) => (
+  <svg {...base} {...p}>
+    <path d="M8 22h8M12 11v11" />
+    <path d="m19 3-7 8-7-8Z" />
+  </svg>
+);

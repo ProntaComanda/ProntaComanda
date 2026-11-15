@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import AdminLayout from '../../components/layout/AdminLayout';
 import PageHeader from '../../components/layout/PageHeader';
+import FiltroSetor from '../../components/cardapio/FiltroSetor';
 import ProdutoCard from '../../components/cardapio/ProdutoCard';
 import ProdutoFormModal from '../../components/cardapio/ProdutoFormModal';
 import CategoriaFormModal from '../../components/cardapio/CategoriaFormModal';
@@ -31,6 +32,7 @@ export default function Cardapio() {
   const [produtos, setProdutos] = useState([]); // aba de uma categoria
   const [grupos, setGrupos] = useState([]); // aba "Todos": [{ nome, produtos }]
   const [busca, setBusca] = useState('');
+  const [setor, setSetor] = useState('todos'); // 'todos' | 'cozinha' | 'bar'
   const [carregando, setCarregando] = useState(true);
 
   // Modais: null = fechado
@@ -67,13 +69,18 @@ export default function Cardapio() {
 
   const categoriaSelecionada = categorias.find((c) => c._id === categoriaAtiva);
 
-  // A busca filtra aqui mesmo, na lista já carregada: por nome, descrição, ingredientes,
-  // categoria ou preço (regra em utils/buscaProduto.js).
+  // A busca e o filtro de setor funcionam aqui mesmo, na lista já carregada. A busca é por nome,
+  // descrição, ingredientes, categoria ou preço (regra em utils/buscaProduto.js).
   const termo = busca.trim();
+  const filtrando = Boolean(termo) || setor !== 'todos';
   const filtrar = useCallback(
     (lista, nomeCategoria) =>
-      termo ? lista.filter((p) => produtoCombinaComBusca(p, termo, nomeCategoria)) : lista,
-    [termo]
+      lista.filter(
+        (p) =>
+          (setor === 'todos' || (p.setor ?? 'cozinha') === setor) &&
+          (!termo || produtoCombinaComBusca(p, termo, nomeCategoria))
+      ),
+    [termo, setor]
   );
   const produtosVisiveis = useMemo(
     () => filtrar(produtos, categoriaSelecionada?.nome),
@@ -83,9 +90,9 @@ export default function Cardapio() {
     () =>
       grupos
         .map((g) => ({ ...g, produtos: filtrar(g.produtos, g.nome) }))
-        // buscando, esconde categorias sem resultado; sem busca, mostra todas
-        .filter((g) => !termo || g.produtos.length > 0),
-    [filtrar, grupos, termo]
+        // filtrando, esconde categorias sem resultado; sem filtro, mostra todas
+        .filter((g) => !filtrando || g.produtos.length > 0),
+    [filtrar, grupos, filtrando]
   );
 
   // ---------- categorias ----------
@@ -240,15 +247,18 @@ export default function Cardapio() {
             {c.nome}
           </Chip>
         ))}
-        <Input
-          className="ml-auto w-full sm:w-64"
-          type="search"
-          aria-label="Buscar produto por nome, descrição ou preço"
-          leftIcon={<IconSearch className="h-4 w-4" />}
-          value={busca}
-          onChange={(e) => setBusca(e.target.value)}
-          placeholder="Nome, descrição ou preço..."
-        />
+        <div className="ml-auto flex w-full items-center gap-2 sm:w-auto">
+          <FiltroSetor valor={setor} onChange={setSetor} />
+          <Input
+            className="min-w-0 flex-1 sm:w-64 sm:flex-none"
+            type="search"
+            aria-label="Buscar produto por nome, descrição ou preço"
+            leftIcon={<IconSearch className="h-4 w-4" />}
+            value={busca}
+            onChange={(e) => setBusca(e.target.value)}
+            placeholder="Nome, descrição ou preço..."
+          />
+        </div>
       </div>
 
       {categoriaSelecionada && (
@@ -282,12 +292,14 @@ export default function Cardapio() {
           ))
         ) : (
           <EmptyState
-            title={termo ? 'Nenhum produto encontrado' : 'Nenhuma categoria cadastrada'}
+            title={filtrando ? 'Nenhum produto encontrado' : 'Nenhuma categoria cadastrada'}
             description={
-              termo ? 'Tente outro nome.' : 'Crie a primeira categoria para começar a montar o cardápio.'
+              filtrando
+                ? 'Tente outra busca ou outro setor.'
+                : 'Crie a primeira categoria para começar a montar o cardápio.'
             }
             action={
-              !termo && (
+              !filtrando && (
                 <Button variant="strong" onClick={() => setModalCategoria({})}>
                   Nova categoria
                 </Button>
@@ -297,8 +309,8 @@ export default function Cardapio() {
         )
       ) : produtosVisiveis.length ? (
         listaProdutos(produtosVisiveis)
-      ) : termo ? (
-        <EmptyState title="Nenhum produto encontrado" description="Tente outro nome." />
+      ) : filtrando ? (
+        <EmptyState title="Nenhum produto encontrado" description="Tente outra busca ou outro setor." />
       ) : (
         semProdutos
       )}
