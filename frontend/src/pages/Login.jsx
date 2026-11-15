@@ -1,10 +1,10 @@
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { loginSchema } from '../schemas/auth.schema';
 import { useAuthStore } from '../store/authStore';
 import { destinoPosLogin } from '../routes/destinosPorPerfil';
-import { Button, IconCheck, IconUser, Input, Logo } from '../components/ui';
+import { Button, IconArrowLeft, IconCheck, IconUser, Input, Logo } from '../components/ui';
 
 // Aplica a máscara 000.000.000-00 enquanto digita. O schema de validação
 // continua recebendo o texto como o usuário vê (com máscara); quem tira a
@@ -63,7 +63,16 @@ export default function Login() {
         </div>
       </div>
 
-      <div className="flex items-center justify-center bg-canvas p-8">
+      <div className="relative flex items-center justify-center bg-canvas px-8 pb-8 pt-16 md:p-8">
+        {/* discreto: o cliente que chegou aqui sem querer volta ao cardápio sem mexer no endereço */}
+        <Link
+          to="/"
+          className="absolute left-4 top-4 inline-flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium text-ink-soft transition hover:bg-muted hover:text-ink"
+        >
+          <IconArrowLeft className="h-4 w-4" />
+          Cardápio digital
+        </Link>
+
         <form onSubmit={handleSubmit(onSubmit)} noValidate className="w-full max-w-sm space-y-4">
           <div className="mb-6">
             <Logo className="mb-4 h-14 text-ink" />

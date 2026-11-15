@@ -6,6 +6,7 @@ import CartaoProduto from '../../components/publico/CartaoProduto';
 import ProdutoDetalhe from '../../components/publico/ProdutoDetalhe';
 import { Button, Chip, EmptyState, IconLogin, IconSearch, Input, Logo, Spinner, ThemeToggle } from '../../components/ui';
 import { toast } from '../../store/toastStore';
+import { useBarraDeRolagemFixa } from '../../hooks/useBarraDeRolagemFixa';
 import { produtoCombinaComBusca } from '../../utils/buscaProduto';
 
 const TODOS = 'todos';
@@ -99,17 +100,8 @@ export default function CardapioPublico() {
     setProdutoAbertoId(null);
   };
 
-  // Sem isso, trocar de categoria muda o tamanho da lista: com poucos itens a barra de rolagem
-  // some, a página ganha uns 15 px de largura e o conteúdo centralizado "pula" para o meio.
-  // Reservar o espaço da barra (só nesta tela) mantém tudo parado.
-  useEffect(() => {
-    const raiz = document.documentElement;
-    const anterior = raiz.style.scrollbarGutter;
-    raiz.style.scrollbarGutter = 'stable';
-    return () => {
-      raiz.style.scrollbarGutter = anterior;
-    };
-  }, []);
+  // Trocar de categoria muda a altura da lista: sem reservar a barra de rolagem, a página pula.
+  useBarraDeRolagemFixa();
 
   return (
     <div className="flex min-h-screen flex-col bg-canvas-warm text-ink">

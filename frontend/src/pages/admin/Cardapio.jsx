@@ -222,7 +222,7 @@ export default function Cardapio() {
   );
 
   return (
-    <AdminLayout>
+    <AdminLayout reservarBarra>
       <PageHeader
         titulo="Cardápio"
         descricao="Gerencie os produtos e categorias do seu cardápio"

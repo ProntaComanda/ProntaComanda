@@ -18,6 +18,7 @@ import {
 } from '../ui';
 import { cn } from '../../lib/cn';
 import CabecalhoGarcom from '../garcom/CabecalhoGarcom';
+import { useBarraDeRolagemFixa } from '../../hooks/useBarraDeRolagemFixa';
 
 /**
  * Sidebar do Admin, como no design: uma barra fina de ícones sempre visível
@@ -63,7 +64,11 @@ function Avatar({ nome }) {
 // abre (ele continua à vista, só desabilitado). Usado no KDS (Cozinha e Bar), para a equipe
 // da cozinha ter o máximo de área útil. O fechamento vale como uma escolha do usuário: ao ir
 // para outra tela o menu continua fechado (não "reabre sozinho") e ele abre se quiser.
-export default function AdminLayout({ children, painel, sidebarFechada = false }) {
+//
+// `reservarBarra` (opcional): reserva o espaço da barra de rolagem da página, para o conteúdo
+// não "pular" quando a lista fica curta ou longa (ver hooks/useBarraDeRolagemFixa). Ligue nas
+// telas de lista, como o Cardápio. Não use em tela de altura fixa, como Mesas e Comandas.
+export default function AdminLayout({ children, painel, sidebarFechada = false, reservarBarra = false }) {
   const funcionario = useAuthStore((s) => s.funcionario);
   const logout = useAuthStore((s) => s.logout);
   const abertaSalva = useSidebarStore((s) => s.aberta);
@@ -80,6 +85,8 @@ export default function AdminLayout({ children, painel, sidebarFechada = false }
   useEffect(() => {
     if (sidebarFechada) fechar();
   }, [sidebarFechada, fechar]);
+
+  useBarraDeRolagemFixa(reservarBarra);
 
   // Ao limpar a sessão, a RotaProtegida redireciona para /login. Se a chamada
   // falhar, a store já limpou a sessão (finally): nada a tratar aqui.
