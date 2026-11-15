@@ -97,6 +97,18 @@ export default function CardapioPublico() {
     setProdutoAbertoId(null);
   };
 
+  // Sem isso, trocar de categoria muda o tamanho da lista: com poucos itens a barra de rolagem
+  // some, a página ganha uns 15 px de largura e o conteúdo centralizado "pula" para o meio.
+  // Reservar o espaço da barra (só nesta tela) mantém tudo parado.
+  useEffect(() => {
+    const raiz = document.documentElement;
+    const anterior = raiz.style.scrollbarGutter;
+    raiz.style.scrollbarGutter = 'stable';
+    return () => {
+      raiz.style.scrollbarGutter = anterior;
+    };
+  }, []);
+
   return (
     <div className="flex min-h-screen flex-col bg-canvas-warm text-ink">
       <header className="sticky top-0 z-10 border-b border-line bg-muted dark:bg-surface">

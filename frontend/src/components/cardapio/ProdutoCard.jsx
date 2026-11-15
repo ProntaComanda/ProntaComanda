@@ -15,12 +15,16 @@ export default function ProdutoCard({ produto: p, onEditar, onRemover, onDisponi
 
   return (
     <article className="relative flex gap-4 rounded-lg border border-b-[3px] border-line border-b-primary bg-surface p-4 shadow-sm">
-      <div className={cn('h-28 w-28 shrink-0 overflow-hidden rounded-md bg-muted', esmaecido)}>
-        {p.imagemUrl ? (
-          <img src={p.imagemUrl} alt={p.nome} className="h-full w-full object-cover" loading="lazy" />
-        ) : (
-          <span className="flex h-full items-center justify-center text-xs text-ink-faint">Sem foto</span>
-        )}
+      {/* coluna da foto: o preço fica logo abaixo dela, encostado na borda esquerda */}
+      <div className="flex shrink-0 flex-col gap-2">
+        <div className={cn('h-28 w-28 overflow-hidden rounded-md bg-muted', esmaecido)}>
+          {p.imagemUrl ? (
+            <img src={p.imagemUrl} alt={p.nome} className="h-full w-full object-cover" loading="lazy" />
+          ) : (
+            <span className="flex h-full items-center justify-center text-xs text-ink-faint">Sem foto</span>
+          )}
+        </div>
+        <p className={cn('flex h-8 items-center text-base font-bold tabular-nums', esmaecido)}>{dinheiro(p.preco)}</p>
       </div>
 
       <div className="flex min-w-0 flex-1 flex-col">
@@ -47,8 +51,7 @@ export default function ProdutoCard({ produto: p, onEditar, onRemover, onDisponi
           )}
         </div>
 
-        <div className="mt-auto flex items-center justify-between gap-2 pt-3">
-          <span className={cn('text-base font-semibold', esmaecido)}>{dinheiro(p.preco)}</span>
+        <div className="mt-auto flex items-center justify-end gap-2 pt-3">
           <div className="flex items-center gap-1">
             <Button
               variant="secondary"

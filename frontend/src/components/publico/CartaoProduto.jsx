@@ -32,8 +32,8 @@ export default function CartaoProduto({ produto: p, quantidade, onAbrir, onAdici
             <span className="flex h-full items-center justify-center text-xs text-ink-faint">Sem foto</span>
           )}
         </button>
-        {/* h-8: mesma altura do botão "Adicionar", para o preço e o botão ficarem alinhados */}
-        <p className="mt-auto flex h-8 items-center text-base font-bold tabular-nums">{dinheiro(p.preco)}</p>
+        {/* encostado na borda esquerda da foto e logo abaixo dela; h-8 = altura do botão "Adicionar" */}
+        <p className="flex h-8 items-center text-base font-bold tabular-nums">{dinheiro(p.preco)}</p>
       </div>
 
       <div className="flex min-w-0 flex-1 flex-col">
