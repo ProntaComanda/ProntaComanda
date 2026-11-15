@@ -6,6 +6,7 @@ import CartaoProduto from '../../components/publico/CartaoProduto';
 import ProdutoDetalhe from '../../components/publico/ProdutoDetalhe';
 import { Button, Chip, EmptyState, IconLogin, IconSearch, Input, Logo, Spinner, ThemeToggle } from '../../components/ui';
 import { toast } from '../../store/toastStore';
+import { produtoCombinaComBusca } from '../../utils/buscaProduto';
 
 const TODOS = 'todos';
 const MAX_POR_ITEM = 20; // mesmo limite validado no servidor
@@ -67,13 +68,14 @@ export default function CardapioPublico() {
   // Filtro é local: a busca no servidor existe (?busca=), mas filtrar aqui
   // dá resposta instantânea enquanto a pessoa digita, sem ida e volta à API.
   const gruposFiltrados = useMemo(() => {
-    const termo = busca.trim().toLowerCase();
+    const termo = busca.trim();
     return grupos
       .filter((g) => categoriaAtiva === TODOS || g._id === categoriaAtiva)
       .map((g) => ({
         ...g,
+        // nome, descrição, ingredientes, categoria ou preço (regra em utils/buscaProduto.js)
         produtos: termo
-          ? g.produtos.filter((p) => p.nome.toLowerCase().includes(termo))
+          ? g.produtos.filter((p) => produtoCombinaComBusca(p, termo, g.nome))
           : g.produtos,
       }))
       .filter((g) => g.produtos.length > 0);
@@ -152,11 +154,11 @@ export default function CardapioPublico() {
               <Input
                 className="mt-5"
                 type="search"
-                aria-label="Buscar no cardápio"
+                aria-label="Buscar no cardápio por nome, descrição ou preço"
                 leftIcon={<IconSearch className="h-4 w-4" />}
                 value={busca}
                 onChange={(e) => setBusca(e.target.value)}
-                placeholder="Buscar item, categoria..."
+                placeholder="Buscar por nome, descrição ou preço..."
               />
 
               <div className="mt-4 flex flex-wrap gap-2 border-t border-line pt-4">

@@ -16,6 +16,7 @@ import {
 } from '../../components/ui';
 import api from '../../api/axiosClient';
 import { toast } from '../../store/toastStore';
+import { produtoCombinaComBusca } from '../../utils/buscaProduto';
 import { mensagemErro } from '../../utils/erroApi';
 
 // "Todos" é uma aba virtual da tela (não existe no banco): mostra o cardápio
@@ -66,17 +67,22 @@ export default function Cardapio() {
 
   const categoriaSelecionada = categorias.find((c) => c._id === categoriaAtiva);
 
-  // A busca filtra por nome aqui mesmo, na lista já carregada.
-  const termo = busca.trim().toLowerCase();
+  // A busca filtra aqui mesmo, na lista já carregada: por nome, descrição, ingredientes,
+  // categoria ou preço (regra em utils/buscaProduto.js).
+  const termo = busca.trim();
   const filtrar = useCallback(
-    (lista) => (termo ? lista.filter((p) => p.nome.toLowerCase().includes(termo)) : lista),
+    (lista, nomeCategoria) =>
+      termo ? lista.filter((p) => produtoCombinaComBusca(p, termo, nomeCategoria)) : lista,
     [termo]
   );
-  const produtosVisiveis = useMemo(() => filtrar(produtos), [filtrar, produtos]);
+  const produtosVisiveis = useMemo(
+    () => filtrar(produtos, categoriaSelecionada?.nome),
+    [filtrar, produtos, categoriaSelecionada]
+  );
   const gruposVisiveis = useMemo(
     () =>
       grupos
-        .map((g) => ({ ...g, produtos: filtrar(g.produtos) }))
+        .map((g) => ({ ...g, produtos: filtrar(g.produtos, g.nome) }))
         // buscando, esconde categorias sem resultado; sem busca, mostra todas
         .filter((g) => !termo || g.produtos.length > 0),
     [filtrar, grupos, termo]
@@ -237,11 +243,11 @@ export default function Cardapio() {
         <Input
           className="ml-auto w-full sm:w-64"
           type="search"
-          aria-label="Buscar produto"
+          aria-label="Buscar produto por nome, descrição ou preço"
           leftIcon={<IconSearch className="h-4 w-4" />}
           value={busca}
           onChange={(e) => setBusca(e.target.value)}
-          placeholder="Buscar produto..."
+          placeholder="Nome, descrição ou preço..."
         />
       </div>
 
