@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Link, useNavigate } from 'react-router-dom';
@@ -45,8 +46,20 @@ export default function Login() {
     }
   };
 
+  // O login é sempre escuro, seja qual for o tema escolhido no resto do sistema. A classe "dark"
+  // na raiz da tela (abaixo) troca as cores só aqui dentro; isto aqui faz o mesmo com o que fica
+  // fora dela (barra de rolagem e controles do navegador). A preferência salva não é alterada.
+  useEffect(() => {
+    const raiz = document.documentElement;
+    const anterior = raiz.style.colorScheme;
+    raiz.style.colorScheme = 'dark';
+    return () => {
+      raiz.style.colorScheme = anterior;
+    };
+  }, []);
+
   return (
-    <div className="grid min-h-screen grid-cols-1 md:grid-cols-[1fr_minmax(22rem,27%)]">
+    <div className="dark grid min-h-screen grid-cols-1 bg-canvas text-ink md:grid-cols-[1fr_minmax(22rem,27%)]">
       {/* Painel de marca (só em telas médias para cima) */}
       <div className="hidden items-center justify-center bg-login-gradient p-12 text-white md:flex">
         <div>
