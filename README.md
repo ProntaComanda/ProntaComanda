@@ -80,7 +80,8 @@ O `.env` guarda as configurações da sua máquina e **nunca vai para o Git**.
 **3. Gere o `JWT_SECRET`** (a chave que assina os logins; o sistema não sobe
 sem ela). Este comando já grava uma chave aleatória no seu `.env`:
 ```bash
-sed -i "s/^JWT_SECRET=.*/JWT_SECRET=$(openssl rand -hex 64)/" .env
+$secret = -join ((1..64) | ForEach-Object { '{0:x2}' -f (Get-Random -Maximum 256) })
+(Get-Content .env) -replace '^JWT_SECRET=.*', "JWT_SECRET=$secret" | Set-Content .env
 ```
 Cada pessoa gera a sua; não compartilhe nem commite essa chave.
 
@@ -97,7 +98,7 @@ docker compose ps
 ```
 `mongo` e `backend` devem aparecer como `(healthy)`. Teste também a API:
 ```bash
-curl -i http://localhost:8080/api/auth/me
+curl.exe -i http://localhost:8080/api/auth/me
 ```
 Deve responder `401` com `{"erro":"Não autenticado."}`. Isso é o esperado:
 você ainda não fez login, e a resposta prova que o nginx está falando com o
@@ -114,41 +115,15 @@ em [`docs/dados-de-exemplo.md`](docs/dados-de-exemplo.md).
 **7. Entre no sistema:** abra **http://localhost:8080**, clique em **Entrar** e use
 um dos logins de demonstração.
 
-<details>
-<summary>Prefere criar só o administrador, sem os dados de exemplo?</summary>
-
 Este comando roda dentro do container do backend, grava a senha com hash argon2
 e cria um administrador. Troque `NOME`, `CPF` e `SENHA` (a senha precisa de pelo
 menos 6 caracteres e não pode ter aspas simples; o CPF precisa ser **válido**):
 
-```bash
-docker compose exec -T \
-  -e NOME='Seu Nome' -e CPF='529.982.247-25' -e SENHA='SuaSenhaAqui' \
-  backend node - <<'EOF'
-const mongoose = require('mongoose');
-const argon2 = require('argon2');
-const { Funcionario } = require('./src/models');
-const { normalizarCpf, validarCpf } = require('./src/utils/cpf');
+$NOME  = 'Seu Nome'
+$CPF   = '000.000.000-00'
+$SENHA = 'Sua Senha Aqui'
 
-(async () => {
-  const cpf = normalizarCpf(process.env.CPF || '');
-  if (!validarCpf(cpf)) throw new Error('CPF inválido (precisa ter os dígitos verificadores corretos).');
-  if (!process.env.SENHA || process.env.SENHA.length < 6) throw new Error('Senha muito curta (mínimo 6 caracteres).');
-  await mongoose.connect(process.env.MONGO_URI);
-  const senhaHash = await argon2.hash(process.env.SENHA);
-  const adm = await Funcionario.create({
-    nome: process.env.NOME,
-    cpf,
-    senhaHash,
-    perfil: 'administrador',
-  });
-  console.log('Administrador criado:', adm.nome, '| CPF:', adm.cpf);
-  await mongoose.disconnect();
-})().catch((e) => { console.error('Erro:', e.message); process.exit(1); });
-EOF
-```
-Cole o bloco inteiro, do `docker compose exec` até a linha `EOF`.
-</details>
+docker compose exec -T -e NOME=$NOME -e CPF=$CPF -e SENHA=$SENHA backend node scripts/criar-admin.js
 
 #### Comandos do dia a dia
 
