@@ -126,6 +126,40 @@ function resumir(valores, casas = 2) {
   };
 }
 
+/** Quartis (Q1, Q2, Q3) por interpolação linear entre os valores ordenados. */
+function quartis(valores) {
+  const v = apenasNumeros(valores).sort((a, b) => a - b);
+  if (!v.length) return null;
+  const em = (p) => {
+    const posicao = (v.length - 1) * p;
+    const abaixo = Math.floor(posicao);
+    const acima = Math.ceil(posicao);
+    return v[abaixo] + (v[acima] - v[abaixo]) * (posicao - abaixo);
+  };
+  return { q1: em(0.25), q2: em(0.5), q3: em(0.75) };
+}
+
+/**
+ * Separa valores atípicos (outliers) pela regra de Tukey: ficam de fora os
+ * valores abaixo de Q1 - 1,5 x IQR ou acima de Q3 + 1,5 x IQR (IQR = Q3 - Q1).
+ * Com menos de 8 valores, ou IQR zero, nada é considerado atípico.
+ */
+function separarAtipicos(valores) {
+  const v = apenasNumeros(valores);
+  const q = v.length >= 8 ? quartis(v) : null;
+  const iqr = q ? q.q3 - q.q1 : 0;
+  if (!q || iqr === 0) return { normais: v, atipicos: [], limiteInferior: null, limiteSuperior: null };
+
+  const limiteInferior = q.q1 - 1.5 * iqr;
+  const limiteSuperior = q.q3 + 1.5 * iqr;
+  return {
+    normais: v.filter((x) => x >= limiteInferior && x <= limiteSuperior),
+    atipicos: v.filter((x) => x < limiteInferior || x > limiteSuperior),
+    limiteInferior,
+    limiteSuperior,
+  };
+}
+
 // escolhe uma largura de faixa "redonda" (1, 2, 2.5, 5 ou 10 x potência de 10)
 function larguraBonita(bruta) {
   if (!(bruta > 0)) return 1;
@@ -200,6 +234,8 @@ module.exports = {
   variancia,
   desvioPadrao,
   coeficienteVariacao,
+  quartis,
+  separarAtipicos,
   resumir,
   histograma,
   contarCategorias,

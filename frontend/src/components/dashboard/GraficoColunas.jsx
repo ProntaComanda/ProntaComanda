@@ -23,7 +23,8 @@ export default function GraficoColunas({
     colors: categorias.map((_, i) => (destaques.includes(i) ? COR_DESTAQUE : cores.barra)),
     xaxis: {
       categories: categorias,
-      title: tituloX ? { text: tituloX, style: { fontSize: '11px', fontWeight: 500 } } : undefined,
+      // só inclui `title` quando existe: um `title: undefined` quebra o ApexCharts e o gráfico some
+      ...(tituloX && { title: { text: tituloX, style: { fontSize: '11px', fontWeight: 500 } } }),
       labels: { style: { fontSize: '10px' }, rotate: 0, hideOverlappingLabels: true },
       axisBorder: { show: false },
       axisTicks: { show: false },

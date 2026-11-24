@@ -34,6 +34,7 @@ export default function SecaoEquipe({ dados, tipoDesvio }) {
   const resumo = comparativo.itensLancados;
   const quemLancou = funcionarios.filter((f) => f.itensLancados > 0);
   const maior = Math.max(...quemLancou.map((f) => f.itensLancados), 1);
+  const maiorValor = Math.max(...quemLancou.map((f) => f.valorLancado), 1);
   const colunas = COLUNAS.filter((c) => c.fixa || funcionarios.some((f) => f[c.chave] > 0));
 
   return (
@@ -69,7 +70,22 @@ export default function SecaoEquipe({ dados, tipoDesvio }) {
           formatar={moeda}
           moda={textoModa({ resumo: comparativo.valorLancado, formatar: moeda })}
           nota={`${comparativo.funcionariosComPedidos} funcionário(s) com pedidos no período.`}
-        />
+        >
+          <ListaBarras
+            vazio="Nenhum funcionário lançou pedidos neste período."
+            itens={[...quemLancou]
+              .sort((x, y) => y.valorLancado - x.valorLancado)
+              .map((f) => {
+                const z = zScore(f.valorLancado, comparativo.valorLancado, tipoDesvio);
+                return {
+                  chave: f.id,
+                  rotulo: f.nome,
+                  proporcao: f.valorLancado / maiorValor,
+                  extra: z == null ? moeda(f.valorLancado) : `${moeda(f.valorLancado)} (z ${comSinal(z)})`,
+                };
+              })}
+          />
+        </BlocoEstatistico>
       </div>
 
       <PainelDashboard titulo="Desempenho por funcionário">

@@ -1,7 +1,7 @@
 const asyncHandler = require('../utils/asyncHandler');
 const { Comanda, Pagamento, Funcionario, PedidoCliente } = require('../models');
 const { dayjs, TIMEZONE, limitesDoPeriodo } = require('../utils/periodo');
-const { resumir, histograma, contarCategorias, arredondar } = require('../utils/estatistica');
+const { resumir, histograma, contarCategorias, separarAtipicos, arredondar } = require('../utils/estatistica');
 
 /**
  * Estatística descritiva do Dashboard (disciplina de Estatística Aplicada).
@@ -15,6 +15,44 @@ const { resumir, histograma, contarCategorias, arredondar } = require('../utils/
 const minutosEntre = (inicio, fim) => (new Date(fim) - new Date(inicio)) / 60000;
 
 const capitalizar = (texto) => (texto ? texto.charAt(0).toUpperCase() + texto.slice(1) : texto);
+
+// Resumo sobre TODOS os valores (média e mediana juntas mostram o efeito dos
+// atípicos) + histograma só com os valores normais, para uma única comanda
+// esquecida aberta por semanas não achatar o gráfico. Os atípicos são
+// informados à parte, com o resumo recalculado sem eles.
+function comAtipicos(valores, casas) {
+  const { normais, atipicos, limiteSuperior } = separarAtipicos(valores);
+  return {
+    resumo: resumir(valores, casas),
+    histograma: histograma(normais),
+    atipicos: {
+      quantidade: atipicos.length,
+      limiteSuperior: arredondar(limiteSuperior, 1),
+      maior: atipicos.length ? Math.max(...atipicos) : null,
+      resumoSemAtipicos: atipicos.length ? resumir(normais, casas) : null,
+    },
+  };
+}
+
+// Dado inteiro (itens por conta): uma barra por valor, de mínimo a máximo, com zeros
+// nos valores que não ocorreram. É a distribuição de frequência de uma variável
+// discreta e mostra a moda exata. Com amplitude grande, devolve null.
+function distribuicaoDiscreta(valores) {
+  if (!valores.length) return null;
+  const minimo = Math.min(...valores);
+  const maximo = Math.max(...valores);
+  if (maximo - minimo > 24) return null;
+
+  const frequencias = new Map();
+  for (const v of valores) frequencias.set(v, (frequencias.get(v) ?? 0) + 1);
+  const maior = Math.max(...frequencias.values());
+
+  const itens = Array.from({ length: maximo - minimo + 1 }, (_, i) => ({
+    valor: minimo + i,
+    frequencia: frequencias.get(minimo + i) ?? 0,
+  }));
+  return { itens, modaIndices: itens.map((x, i) => (x.frequencia === maior ? i : -1)).filter((i) => i >= 0) };
+}
 
 function intervalo(periodo) {
   const agora = dayjs().tz(TIMEZONE);
@@ -116,11 +154,11 @@ const estatisticas = asyncHandler(async (req, res) => {
     contasFechadas: comandas.length,
 
     valorConta: { resumo: resumir(valoresConta), histograma: histograma(valoresConta) },
-    itensPorConta: { resumo: resumir(itensPorConta) },
-    permanenciaMesa: { resumo: resumir(permanencia, 1), histograma: histograma(permanencia) },
+    itensPorConta: { resumo: resumir(itensPorConta), distribuicao: distribuicaoDiscreta(itensPorConta) },
+    permanenciaMesa: comAtipicos(permanencia, 1),
 
     tempoPreparo: {
-      geral: { resumo: resumir(preparados.map((i) => i.minutos), 1), histograma: histograma(preparados.map((i) => i.minutos)) },
+      geral: comAtipicos(preparados.map((i) => i.minutos), 1),
       cozinha: resumir(preparados.filter((i) => i.setor === 'cozinha').map((i) => i.minutos), 1),
       bar: resumir(preparados.filter((i) => i.setor === 'bar').map((i) => i.minutos), 1),
       prazo: {

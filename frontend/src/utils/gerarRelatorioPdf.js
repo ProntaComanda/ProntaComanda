@@ -464,7 +464,7 @@ function nota(doc, y, texto) {
   return y + 3.6 * linhas.length + 4;
 }
 
-const minutosTxt = (v) => `${decimal(v, 1)} min`;
+const minutosTxt = (v) => (v >= 180 ? `${decimal(v / 60, 1)} h` : `${decimal(v, 1)} min`);
 const faixaMoeda = (f) => `${moeda(f.de)} a ${moeda(f.ate)}`;
 const faixaMinutos = (f) => `${decimal(f.de, 1)} a ${decimal(f.ate, 1)} min`;
 const DIAS = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado'];
