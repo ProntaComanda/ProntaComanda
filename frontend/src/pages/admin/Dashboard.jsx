@@ -6,6 +6,9 @@ import GraficoConversao from '../../components/dashboard/GraficoConversao';
 import GraficoFaturamento from '../../components/dashboard/GraficoFaturamento';
 import ListaBarras from '../../components/dashboard/ListaBarras';
 import PainelDashboard from '../../components/dashboard/PainelDashboard';
+import SecaoEquipe from '../../components/dashboard/SecaoEquipe';
+import SecaoEstatisticas from '../../components/dashboard/SecaoEstatisticas';
+import SeletorDesvio from '../../components/dashboard/SeletorDesvio';
 import {
   Button,
   IconBag,
@@ -23,9 +26,9 @@ import { decimal, inteiro } from '../../utils/numero';
 
 // `comparacao` é o texto que acompanha a variação: o backend compara com o período anterior
 const PERIODOS = [
-  { valor: 'hoje', rotulo: 'Hoje', comparacao: 'vs ontem' },
+  { valor: 'hoje', rotulo: 'Hoje', comparacao: 'vs ontem até esta hora' },
   { valor: 'semana', rotulo: 'Esta semana', comparacao: 'vs 7 dias anteriores' },
-  { valor: 'mes', rotulo: 'Este mês', comparacao: 'vs mês anterior' },
+  { valor: 'mes', rotulo: 'Este mês', comparacao: 'vs mês anterior até o mesmo dia' },
 ];
 
 const ROTULO_STATUS = {
@@ -43,6 +46,10 @@ export default function Dashboard() {
   const [faturamentoMensal, setFaturamentoMensal] = useState([]);
   const [statusPedidos, setStatusPedidos] = useState([]);
   const [topProdutos, setTopProdutos] = useState([]);
+  const [estatisticas, setEstatisticas] = useState(null);
+  const [equipe, setEquipe] = useState(null);
+  // desvio padrão mostrado nas estatísticas: amostral (n-1) ou populacional (n)
+  const [tipoDesvio, setTipoDesvio] = useState('amostral');
   const [erro, setErro] = useState('');
   const [tentativa, setTentativa] = useState(0); // "Tentar de novo" soma 1 e refaz a busca
   // período a que os dados na tela se referem (ao trocar o filtro, os números
@@ -67,12 +74,16 @@ export default function Dashboard() {
       api.get('/dashboard/visao-geral', { params: { periodo } }),
       api.get('/dashboard/status-pedidos', { params: { periodo } }),
       api.get('/dashboard/top-produtos', { params: { periodo } }),
+      api.get('/dashboard/estatisticas', { params: { periodo } }),
+      api.get('/dashboard/equipe', { params: { periodo } }),
     ])
-      .then(([geral, status, produtos]) => {
+      .then(([geral, status, produtos, estat, time]) => {
         if (!ativo) return;
         setVisaoGeral(geral.data);
         setStatusPedidos(status.data);
         setTopProdutos(produtos.data);
+        setEstatisticas(estat.data);
+        setEquipe(time.data);
         setPeriodoCarregado(periodo);
       })
       .catch(() => ativo && setErro('Não foi possível carregar o dashboard agora.'));
@@ -102,6 +113,9 @@ export default function Dashboard() {
           .filter((s) => s.quantidade > 0)
           .map((s) => ({ ...s, rotulo: ROTULO_STATUS[s.status] ?? s.status })),
         topProdutos,
+        estatisticas,
+        equipe,
+        tipoDesvio,
       });
     } catch {
       setErro('Não foi possível gerar o PDF agora. Tente novamente.');
@@ -109,6 +123,16 @@ export default function Dashboard() {
       setGerandoPdf(false);
     }
   };
+
+  // quando o mês anterior já foi consolidado só existe o total do mês inteiro
+  const textoComparacao =
+    periodo === 'mes' && visaoGeral?.baseComparacao === 'mes-completo'
+      ? 'vs mês anterior (completo)'
+      : periodoAtual.comparacao;
+  // semana que atravessa a virada do mês: os registros detalhados do mês anterior já foram consolidados
+  const atravessaMes =
+    estatisticas?.intervalo &&
+    new Date(estatisticas.intervalo.inicio).getMonth() !== new Date(estatisticas.intervalo.fim).getMonth();
 
   const ticket = visaoGeral?.ticketMedio;
   const maiorProduto = topProdutos[0]?.valorTotal || 1;
@@ -172,15 +196,15 @@ export default function Dashboard() {
             Icone={IconDollar}
             valor={moeda(visaoGeral?.ganhoTotal?.valor)}
             variacao={visaoGeral?.ganhoTotal?.variacao}
-            comparacao={periodoAtual.comparacao}
+            comparacao={textoComparacao}
             carregando={!visaoGeral}
           />
           <CartaoIndicador
-            titulo="Ticket médio"
+            titulo="Ticket médio por conta"
             Icone={IconTicket}
             valor={moeda(ticket?.valor)}
             variacao={ticket?.variacao}
-            comparacao={periodoAtual.comparacao}
+            comparacao={textoComparacao}
             carregando={!visaoGeral}
           />
           <CartaoIndicador
@@ -188,7 +212,7 @@ export default function Dashboard() {
             Icone={IconBag}
             valor={inteiro(visaoGeral?.totalPedidos?.valor)}
             variacao={visaoGeral?.totalPedidos?.variacao}
-            comparacao={periodoAtual.comparacao}
+            comparacao={textoComparacao}
             carregando={!visaoGeral}
           />
           <CartaoIndicador
@@ -196,7 +220,7 @@ export default function Dashboard() {
             Icone={IconXSquare}
             valor={inteiro(visaoGeral?.pedidosCancelados?.valor)}
             variacao={visaoGeral?.pedidosCancelados?.variacao}
-            comparacao={periodoAtual.comparacao}
+            comparacao={textoComparacao}
             invertido
             carregando={!visaoGeral}
           />
@@ -205,7 +229,7 @@ export default function Dashboard() {
             Icone={IconTarget}
             valor={`${decimal(visaoGeral?.taxaConversao?.valor)}%`}
             variacao={visaoGeral?.taxaConversao?.variacao}
-            comparacao={periodoAtual.comparacao}
+            comparacao={textoComparacao}
             carregando={!visaoGeral}
           />
         </div>
@@ -249,6 +273,28 @@ export default function Dashboard() {
             />
           </PainelDashboard>
         </div>
+
+        <div className="flex flex-wrap items-end justify-between gap-3 pt-4">
+          <div>
+            <h2 className="text-sm font-bold uppercase tracking-wide">Estatísticas do período</h2>
+            <p className="text-xs text-ink-soft">
+              Média, mediana, moda e desvio padrão sobre os dados de {periodoAtual.rotulo.toLowerCase()}.
+            </p>
+          </div>
+          <SeletorDesvio valor={tipoDesvio} onChange={setTipoDesvio} />
+        </div>
+        {atravessaMes && (
+          <p className="rounded-md bg-muted px-4 py-2 text-xs text-ink-soft">
+            Parte deste período é do mês anterior, cujos registros detalhados já foram consolidados e não entram nestas estatísticas.
+          </p>
+        )}
+        <SecaoEstatisticas dados={estatisticas} tipoDesvio={tipoDesvio} />
+
+        <div className="pt-4">
+          <h2 className="text-sm font-bold uppercase tracking-wide">Desempenho da equipe</h2>
+          <p className="text-xs text-ink-soft">Atividade de cada funcionário no período e o padrão da equipe.</p>
+        </div>
+        <SecaoEquipe dados={equipe} tipoDesvio={tipoDesvio} />
       </div>
     </AdminLayout>
   );

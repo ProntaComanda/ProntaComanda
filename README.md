@@ -283,8 +283,11 @@ e pode ser o celular.
    com os itens iguais empilhados (`2× Hambúrguer`).
 6. **Caixa:** em Mesas/Comandas, fecha a mesa com o pagamento. A comanda **some do
    celular dos clientes** ("Conta encerrada").
-7. **Administrador:** no Dashboard, mostra os indicadores e clica em
-   **Exportar PDF**.
+7. **Administrador:** no Dashboard, mostra os indicadores, as **Estatísticas do
+   período** (média, mediana, moda, desvio padrão), o **Desempenho da equipe** e
+   clica em **Exportar PDF**. Para ter dados variados na apresentação, rode antes
+   `docker compose exec backend node scripts/seed-demo.js` (veja
+   [`docs/estatisticas.md`](docs/estatisticas.md)).
 8. *(Kubernetes)* Apague um pod do site e mostre que o sistema continua no ar
    (veja o roteiro em [`k8s/README.md`](k8s/README.md)).
 

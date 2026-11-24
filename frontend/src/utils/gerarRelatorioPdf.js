@@ -12,6 +12,7 @@
  */
 
 import { rotuloDoMes } from './mesesPt';
+import { cvDe, desvioDe, textoModa } from './estatistica';
 
 const LARGURA = 210; // A4, em mm
 const ALTURA = 297;
@@ -153,7 +154,7 @@ function cartoes(doc, y, visaoGeral) {
       item: visaoGeral?.totalPedidos,
     },
     {
-      titulo: 'Ticket médio',
+      titulo: 'Ticket médio por conta',
       valor: moeda(visaoGeral?.ticketMedio?.valor),
       item: visaoGeral?.ticketMedio,
     },
@@ -391,6 +392,210 @@ function tabelaStatus(doc, y, statusPedidos) {
   return y + lista.length * alturaLinha + 8;
 }
 
+// Tabela genérica: colunas [{ rotulo, largura (mm), alinhar }] e linhas de textos.
+// Repete o cabeçalho quando continua em outra página.
+function tabelaSimples(doc, y, titulo, colunas, linhas, { vazio, fonte = 8 } = {}) {
+  const alturaLinha = 6.4;
+  y = garantirEspaco(doc, y, 8 + 8 + Math.min(Math.max(linhas.length, 1), 4) * alturaLinha);
+  y = tituloSecao(doc, titulo, y);
+
+  if (!linhas.length) {
+    cor(doc, COR.cinza);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    doc.text(vazio ?? 'Sem dados no período.', MARGEM, y + 4);
+    return y + 14;
+  }
+
+  const posicoes = [];
+  let acumulado = MARGEM;
+  for (const c of colunas) {
+    posicoes.push(c.alinhar === 'direita' ? acumulado + c.largura - 1.5 : acumulado + 1.5);
+    acumulado += c.largura;
+  }
+
+  const cabecalhoTabela = () => {
+    cor(doc, COR.cinza);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(fonte - 0.5);
+    colunas.forEach((c, i) => {
+      doc.text(cortarTexto(doc, c.rotulo, c.largura - 2), posicoes[i], y + 3, {
+        align: c.alinhar === 'direita' ? 'right' : 'left',
+      });
+    });
+    cor(doc, COR.borda, 'draw');
+    doc.setLineWidth(0.3);
+    doc.line(MARGEM, y + 5, MARGEM + LARGURA_UTIL, y + 5);
+    y += 6;
+  };
+  cabecalhoTabela();
+
+  linhas.forEach((linha, n) => {
+    if (y + alturaLinha > LIMITE_INFERIOR) {
+      doc.addPage();
+      y = 20;
+      cabecalhoTabela();
+    }
+    if (n % 2 === 0) {
+      cor(doc, COR.fundo, 'fill');
+      doc.rect(MARGEM, y, LARGURA_UTIL, alturaLinha, 'F');
+    }
+    cor(doc, COR.texto);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(fonte);
+    linha.forEach((texto, i) => {
+      doc.text(cortarTexto(doc, String(texto ?? '-'), colunas[i].largura - 2), posicoes[i], y + 4.5, {
+        align: colunas[i].alinhar === 'direita' ? 'right' : 'left',
+      });
+    });
+    y += alturaLinha;
+  });
+
+  return y + 8;
+}
+
+function nota(doc, y, texto) {
+  y = garantirEspaco(doc, y, 10);
+  cor(doc, COR.cinza);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7.5);
+  const linhas = doc.splitTextToSize(texto, LARGURA_UTIL);
+  doc.text(linhas, MARGEM, y + 2);
+  return y + 3.6 * linhas.length + 4;
+}
+
+const minutosTxt = (v) => `${decimal(v, 1)} min`;
+const faixaMoeda = (f) => `${moeda(f.de)} a ${moeda(f.ate)}`;
+const faixaMinutos = (f) => `${decimal(f.de, 1)} a ${decimal(f.ate, 1)} min`;
+const DIAS = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado'];
+const PAGAMENTO = { pix: 'Pix', cartao: 'Cartão', dinheiro: 'Dinheiro' };
+
+function secaoEstatisticas(doc, y, estatisticas, tipoDesvio) {
+  const t = tipoDesvio === 'populacional' ? 'populacional' : 'amostral';
+  const linhaDe = (nome, resumo, formatar, histograma, formatarFaixa, modo) => {
+    if (!resumo?.n) return [nome, 0, '-', '-', '-', '-', '-', '-'];
+    const desvio = desvioDe(resumo, t);
+    const cv = cvDe(resumo, t);
+    return [
+      nome,
+      inteiro(resumo.n),
+      formatar(resumo.media),
+      formatar(resumo.mediana),
+      textoModa({ resumo, histograma, formatar, formatarFaixa, modo }),
+      desvio == null ? '-' : formatar(desvio),
+      cv == null ? '-' : `${decimal(cv, 1)}%`,
+      `${formatar(resumo.minimo)} a ${formatar(resumo.maximo)}`,
+    ];
+  };
+  const unidades = (v) => decimal(v, 1);
+  const { valorConta, permanenciaMesa, tempoPreparo, itensPorConta } = estatisticas;
+
+  y = tabelaSimples(
+    doc,
+    y,
+    `Estatísticas descritivas (desvio padrão ${t})`,
+    [
+      { rotulo: 'Variável', largura: 34 },
+      { rotulo: 'n', largura: 9, alinhar: 'direita' },
+      { rotulo: 'Média', largura: 20, alinhar: 'direita' },
+      { rotulo: 'Mediana', largura: 20, alinhar: 'direita' },
+      { rotulo: 'Moda', largura: 30, alinhar: 'direita' },
+      { rotulo: 'Desvio', largura: 19, alinhar: 'direita' },
+      { rotulo: 'CV', largura: 12, alinhar: 'direita' },
+      { rotulo: 'Mín. a máx.', largura: 36, alinhar: 'direita' },
+    ],
+    [
+      linhaDe('Valor por conta', valorConta.resumo, moeda, valorConta.histograma, faixaMoeda, 'faixa'),
+      linhaDe('Tempo até ficar pronto', tempoPreparo.geral.resumo, minutosTxt, tempoPreparo.geral.histograma, faixaMinutos),
+      linhaDe('  Cozinha', tempoPreparo.cozinha, minutosTxt),
+      linhaDe('  Bar', tempoPreparo.bar, minutosTxt),
+      linhaDe('Permanência na mesa', permanenciaMesa.resumo, minutosTxt, permanenciaMesa.histograma, faixaMinutos),
+      linhaDe('Itens por conta', itensPorConta.resumo, unidades),
+    ],
+    { fonte: 7 }
+  );
+  y = nota(
+    doc,
+    y - 4,
+    'CV = coeficiente de variação (desvio padrão / média). Em dados contínuos (R$ e tempos) a moda é a faixa com mais ocorrências. "amodal" = nenhum valor se repete. Registros do mês anterior já consolidados não entram nas estatísticas.'
+  );
+
+  const prazo = tempoPreparo.prazo;
+  const linhasCategorias = [];
+  if (estatisticas.horarioPico.moda.length)
+    linhasCategorias.push(['Horário de pico (moda)', estatisticas.horarioPico.moda.map((h) => `${h}h`).join(' e ')]);
+  if (estatisticas.periodo !== 'hoje' && estatisticas.diaSemana.moda.length)
+    linhasCategorias.push(['Dia mais movimentado (moda)', estatisticas.diaSemana.moda.map((d) => DIAS[d]).join(' e ')]);
+  if (estatisticas.formaPagamento.moda.length)
+    linhasCategorias.push(['Forma de pagamento mais usada (moda)', estatisticas.formaPagamento.moda.map((m) => PAGAMENTO[m] ?? m).join(' e ')]);
+  if (estatisticas.produtoMaisVendido.moda.length)
+    linhasCategorias.push(['Produto mais vendido (moda)', estatisticas.produtoMaisVendido.moda.join(' e ')]);
+  if (estatisticas.motivoEstorno.moda.length)
+    linhasCategorias.push(['Motivo de estorno mais comum (moda)', estatisticas.motivoEstorno.moda.join(' e ')]);
+  if (prazo.percentual != null)
+    linhasCategorias.push([
+      'Itens prontos dentro do prazo cadastrado',
+      `${decimal(prazo.percentual, 1)}% (${inteiro(prazo.dentroDoPrazo)} de ${inteiro(prazo.itensComPrazo)})`,
+    ]);
+
+  return tabelaSimples(
+    doc,
+    y,
+    'Padrões mais frequentes',
+    [
+      { rotulo: 'Indicador', largura: 90 },
+      { rotulo: 'Resultado', largura: 90 },
+    ],
+    linhasCategorias,
+    { vazio: 'Sem dados no período.', fonte: 8.5 }
+  );
+}
+
+function secaoEquipe(doc, y, equipe, tipoDesvio) {
+  const t = tipoDesvio === 'populacional' ? 'populacional' : 'amostral';
+  const linhas = equipe.funcionarios.map((f) => [
+    f.nome,
+    inteiro(f.itensLancados),
+    inteiro(f.mesasAtendidas),
+    moeda(f.valorLancado),
+    inteiro(f.contasFechadas),
+    f.ticketMedio == null ? '-' : moeda(f.ticketMedio),
+    moeda(f.valorRecebido),
+    inteiro(f.estornos),
+  ]);
+
+  y = tabelaSimples(
+    doc,
+    y,
+    'Desempenho por funcionário',
+    [
+      { rotulo: 'Funcionário', largura: 34 },
+      { rotulo: 'Itens lanç.', largura: 17, alinhar: 'direita' },
+      { rotulo: 'Mesas atend.', largura: 20, alinhar: 'direita' },
+      { rotulo: 'Vendas lançadas', largura: 27, alinhar: 'direita' },
+      { rotulo: 'Contas fech.', largura: 20, alinhar: 'direita' },
+      { rotulo: 'Ticket médio', largura: 22, alinhar: 'direita' },
+      { rotulo: 'Recebido caixa', largura: 24, alinhar: 'direita' },
+      { rotulo: 'Estornos', largura: 16, alinhar: 'direita' },
+    ],
+    linhas,
+    { vazio: 'Nenhuma atividade registrada no período.', fonte: 7.5 }
+  );
+
+  const r = equipe.comparativo.itensLancados;
+  if (r?.n) {
+    const desvio = desvioDe(r, t);
+    y = nota(
+      doc,
+      y - 4,
+      `Itens lançados entre os ${r.n} funcionários com pedidos: média ${decimal(r.media, 1)}, mediana ${decimal(r.mediana, 1)}` +
+        (desvio == null ? '.' : `, desvio padrão ${t} ${decimal(desvio, 1)}.`) +
+        ' Os números mostram a atividade registrada e também refletem turno e função de cada pessoa.'
+    );
+  }
+  return y;
+}
+
 function rodapes(doc, estabelecimento) {
   const total = doc.getNumberOfPages();
   for (let pagina = 1; pagina <= total; pagina++) {
@@ -420,6 +625,9 @@ function rodapes(doc, estabelecimento) {
  * @param {Array}  dados.faturamentoMensal resposta de /dashboard/faturamento-mensal
  * @param {Array}  dados.statusPedidos   /dashboard/status-pedidos, já com `rotulo` por item
  * @param {Array}  dados.topProdutos     resposta de /dashboard/top-produtos
+ * @param {object} [dados.estatisticas]  resposta de /dashboard/estatisticas (seção de estatísticas)
+ * @param {object} [dados.equipe]        resposta de /dashboard/equipe (desempenho por funcionário)
+ * @param {string} [dados.tipoDesvio]    'amostral' (padrão) ou 'populacional'
  */
 export async function montarRelatorioPdf({
   periodoRotulo,
@@ -427,6 +635,9 @@ export async function montarRelatorioPdf({
   faturamentoMensal,
   statusPedidos,
   topProdutos,
+  estatisticas,
+  equipe,
+  tipoDesvio = 'amostral',
   geradoPor,
   geradoEm = new Date(),
   estabelecimento = 'Pronta Comanda',
@@ -445,7 +656,9 @@ export async function montarRelatorioPdf({
   y = cartoes(doc, y, visaoGeral);
   y = graficoFaturamento(doc, y, faturamentoMensal);
   y = tabelaTopProdutos(doc, y, topProdutos);
-  tabelaStatus(doc, y, statusPedidos);
+  y = tabelaStatus(doc, y, statusPedidos);
+  if (estatisticas) y = secaoEstatisticas(doc, y, estatisticas, tipoDesvio);
+  if (equipe) y = secaoEquipe(doc, y, equipe, tipoDesvio);
   rodapes(doc, estabelecimento);
 
   return doc;

@@ -27,6 +27,9 @@ const pagamentoSchema = new Schema(
 
     recebidoPor: { type: Schema.Types.ObjectId, ref: 'Funcionario', required: true },
 
+    // true = gerado por scripts/seed-demo.js (dados de demonstração)
+    demo: { type: Boolean, default: false },
+
     // RF12 - se o caixa reabrir a mesa por engano, o pagamento é estornado
     // (soft delete) em vez de removido, preservando o log para auditoria.
     estornado: { type: Boolean, default: false },

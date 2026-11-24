@@ -125,8 +125,14 @@ const atualizarStatusItem = asyncHandler(async (req, res) => {
       $set: {
         'itens.$.statusKDS': status,
         ...(status === 'em_preparo' && { 'itens.$.emPreparoEm': new Date() }),
-        ...(status === 'pronto' && { 'itens.$.prontoEm': new Date() }),
-        ...(status === 'entregue' && { 'itens.$.entregueEm': new Date() }),
+        ...(status === 'pronto' && {
+          'itens.$.prontoEm': new Date(),
+          'itens.$.prontoPor': req.funcionario._id,
+        }),
+        ...(status === 'entregue' && {
+          'itens.$.entregueEm': new Date(),
+          'itens.$.entreguePor': req.funcionario._id,
+        }),
       },
     },
     { new: true }
@@ -228,8 +234,14 @@ const avancarStatusPedido = asyncHandler(async (req, res) => {
     .forEach((item) => {
       item.statusKDS = proximoStatus;
       if (proximoStatus === 'em_preparo') item.emPreparoEm = agora;
-      if (proximoStatus === 'pronto') item.prontoEm = agora;
-      if (proximoStatus === 'entregue') item.entregueEm = agora;
+      if (proximoStatus === 'pronto') {
+        item.prontoEm = agora;
+        item.prontoPor = req.funcionario._id;
+      }
+      if (proximoStatus === 'entregue') {
+        item.entregueEm = agora;
+        item.entreguePor = req.funcionario._id;
+      }
     });
 
   await comanda.save();

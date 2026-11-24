@@ -26,6 +26,10 @@ const itemComandaSchema = new Schema(
     emPreparoEm: { type: Date, default: null },
     prontoEm: { type: Date, default: null },
     entregueEm: { type: Date, default: null },
+    // quem marcou o item como pronto / entregue no KDS (estatística por
+    // funcionário). Itens antigos não têm esses campos.
+    prontoPor: { type: Schema.Types.ObjectId, ref: 'Funcionario', default: null },
+    entreguePor: { type: Schema.Types.ObjectId, ref: 'Funcionario', default: null },
 
     // estorno
     estornado: { type: Boolean, default: false },
@@ -66,6 +70,10 @@ const comandaSchema = new Schema(
     // que os produtos mudarem de preço).
     subtotal: { type: Number, default: 0 },
     total: { type: Number, default: 0 },
+
+    // true = registro gerado por scripts/seed-demo.js (dados de demonstração),
+    // para poder apagar só ele depois (`npm run seed:demo -- --limpar`)
+    demo: { type: Boolean, default: false },
 
     // RF25 - rastro de transferência/junção
     origemTransferencia: {

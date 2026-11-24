@@ -1,9 +1,6 @@
-const dayjs = require('dayjs');
-dayjs.extend(require('dayjs/plugin/utc'));
-dayjs.extend(require('dayjs/plugin/timezone'));
-
 const asyncHandler = require('../utils/asyncHandler');
 const { Comanda, Pagamento, ResumoMensal, STATUS_ITEM_KDS } = require('../models');
+const { dayjs, TIMEZONE, limitesDoPeriodo } = require('../utils/periodo');
 
 /**
  * RF17 - Dashboard de Gestão (BI)
@@ -14,37 +11,11 @@ const { Comanda, Pagamento, ResumoMensal, STATUS_ITEM_KDS } = require('../models
  * "Pedido" aqui é cada ITEM lançado numa comanda (não a comanda inteira,
  * nem só os pagos) — inclui os que depois foram estornados, que é
  * justamente o que os cartões de cancelamento/conversão medem.
+ *
+ * O Ticket Médio, por outro lado, é por CONTA paga (ganho total / contas
+ * pagas): é a leitura usual de ticket médio em restaurante.
  */
-const TIMEZONE = process.env.TZ_ESTABELECIMENTO || 'America/Sao_Paulo';
 const arredondar = (valor) => Math.round((valor + Number.EPSILON) * 100) / 100;
-
-function limitesDoPeriodo(periodo, agora) {
-  switch (periodo) {
-    case 'hoje':
-      return {
-        inicio: agora.startOf('day'),
-        fim: agora,
-        inicioAnterior: agora.subtract(1, 'day').startOf('day'),
-        fimAnterior: agora.subtract(1, 'day').endOf('day'),
-      };
-    case 'semana':
-      // Janela corrida dos últimos 7 dias (não a semana de calendário).
-      return {
-        inicio: agora.subtract(6, 'day').startOf('day'),
-        fim: agora,
-        inicioAnterior: agora.subtract(13, 'day').startOf('day'),
-        fimAnterior: agora.subtract(7, 'day').endOf('day'),
-      };
-    case 'mes':
-    default:
-      return {
-        inicio: agora.startOf('month'),
-        fim: agora,
-        inicioAnterior: agora.subtract(1, 'month').startOf('month'),
-        fimAnterior: agora.subtract(1, 'month').endOf('month'),
-      };
-  }
-}
 
 /** Soma ganho (Pagamento) e conta pedidos/cancelados (itens) num intervalo. */
 async function totaisDoPeriodo(inicio, fim) {
@@ -65,6 +36,7 @@ async function totaisDoPeriodo(inicio, fim) {
 
   return {
     ganhoTotal: arredondar(pagamentos.reduce((soma, p) => soma + p.valorTotal, 0)),
+    contasPagas: pagamentos.reduce((soma, p) => soma + (p.comandas?.length ?? 0), 0),
     totalPedidos: agg?.totalPedidos ?? 0,
     pedidosCancelados: agg?.pedidosCancelados ?? 0,
   };
@@ -84,10 +56,14 @@ async function totaisMesAnterior(inicioAnterior, fimAnterior) {
   if (resumo?.expurgado) {
     // resumo criado antes do campo totalItens existir: sem como comparar pedidos
     if (resumo.totalItens == null) return null;
+    // só existe o total do mês inteiro (não dá para recortar até o mesmo dia):
+    // `mesCompleto` avisa o frontend para dizer isso na comparação
     return {
       ganhoTotal: resumo.faturamentoTotal,
+      contasPagas: resumo.totalPedidos, // nº de comandas fechadas do mês (rollup)
       totalPedidos: resumo.totalItens,
       pedidosCancelados: resumo.totalCancelamentos,
+      mesCompleto: true,
     };
   }
 
@@ -126,19 +102,18 @@ const visaoGeral = asyncHandler(async (req, res) => {
   ]);
 
   const pedidosValidos = atual.totalPedidos - atual.pedidosCancelados;
-  const ticketMedio = pedidosValidos > 0 ? arredondar(atual.ganhoTotal / pedidosValidos) : 0;
+  const ticketMedio = atual.contasPagas > 0 ? arredondar(atual.ganhoTotal / atual.contasPagas) : 0;
   const taxaConversao = atual.totalPedidos
     ? Number(((pedidosValidos / atual.totalPedidos) * 100).toFixed(1))
     : 0;
 
-  const anteriorPedidosValidos = anterior
-    ? anterior.totalPedidos - anterior.pedidosCancelados
-    : null;
   const anteriorTicketMedio =
-    anterior && anteriorPedidosValidos > 0 ? anterior.ganhoTotal / anteriorPedidosValidos : null;
+    anterior && anterior.contasPagas > 0 ? anterior.ganhoTotal / anterior.contasPagas : null;
 
   res.json({
     periodo,
+    // 'mesmo-intervalo' (padrão), 'mes-completo' (mês anterior já expurgado) ou null (sem base)
+    baseComparacao: anterior ? (anterior.mesCompleto ? 'mes-completo' : 'mesmo-intervalo') : null,
     ganhoTotal: {
       valor: atual.ganhoTotal,
       variacao: variacaoPercentual(atual.ganhoTotal, anterior?.ganhoTotal),
